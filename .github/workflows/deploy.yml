@@ -1,21 +1,24 @@
 name: Deploy
 
 # main にマージされたら staging に自動デプロイし、実データで E2E を回す。
-# 本番は GitHub Environments の承認を挟んだ手動実行のみ。
+# 本番は「v*.*.* タグを打つ」ことでリリースする。
+# タグにすることで、本番に入っているコミットが一意に特定でき、
+# 切り戻しは前のタグを再デプロイするだけで済む。
 on:
   push:
     branches: [main]
+    tags: ["v*.*.*"]
   workflow_dispatch:
     inputs:
       target:
-        description: デプロイ先
+        description: デプロイ先（本番はタグ push が正規手順。ここでの prod は緊急用）
         required: true
         default: staging
         type: choice
         options: [staging, prod]
 
 concurrency:
-  group: deploy-${{ github.event.inputs.target || 'staging' }}
+  group: deploy-${{ startsWith(github.ref, 'refs/tags/') && 'prod' || github.event.inputs.target || 'staging' }}
   cancel-in-progress: false
 
 env:
@@ -25,7 +28,11 @@ env:
 jobs:
   deploy-staging:
     name: Deploy to staging
-    if: github.event_name == 'push' || github.event.inputs.target == 'staging'
+    # main への push（= PR マージ）と、staging 指定の手動実行のときだけ動かす。
+    # タグ push は本番リリースなので対象外。
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || github.event.inputs.target == 'staging'
     runs-on: ubuntu-latest
     environment:
       name: staging
@@ -105,7 +112,10 @@ jobs:
 
   deploy-prod:
     name: Deploy to production
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'prod'
+    # v*.*.* タグの push が正規のリソース。手動実行の prod は緊急時の逃げ道として残す。
+    if: >-
+      startsWith(github.ref, 'refs/tags/v')
+      || (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'prod')
     runs-on: ubuntu-latest
     # GitHub Environments 側で required reviewers を設定し、承認を必須にする
     environment:
@@ -116,6 +126,11 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: リリース対象を表示
+        run: |
+          echo "ref    : ${{ github.ref_name }}"
+          echo "commit : ${{ github.sha }}"
 
       - id: auth
         uses: google-github-actions/auth@v2
@@ -128,12 +143,14 @@ jobs:
       - id: deploy
         name: Cloud Run にデプロイ
         run: |
+          # どのタグ・コミットが本番に入っているかを Cloud Run 側からも追えるようラベルを付ける
           gcloud run deploy kosodate-graph-viewer \
             --source ./app \
             --project "$GCP_PROJECT_ID" \
             --region "$REGION" \
             --allow-unauthenticated \
-            --set-env-vars "GCP_PROJECT_ID=$GCP_PROJECT_ID,APP_ENV=prod" \
+            --set-env-vars "GCP_PROJECT_ID=$GCP_PROJECT_ID,APP_ENV=prod,RELEASE_VERSION=${{ github.ref_name }}" \
+            --labels "release=$(echo '${{ github.ref_name }}' | tr '.' '-' | tr '[:upper:]' '[:lower:]'),commit=${{ github.sha }}" \
             --memory 512Mi --cpu 1 --min-instances 0 --max-instances 3 --timeout 120 \
             --quiet
           URL=$(gcloud run services describe kosodate-graph-viewer \
@@ -142,7 +159,9 @@ jobs:
 
       - name: 本番のスモークテスト
         run: |
-          ENV=$(curl -fsS "${{ steps.deploy.outputs.url }}/healthz" | python3 -c 'import json,sys; print(json.load(sys.stdin)["env"])')
+          BODY=$(curl -fsS "${{ steps.deploy.outputs.url }}/healthz")
+          echo "$BODY"
+          ENV=$(echo "$BODY" | python3 -c 'import json,sys; print(json.load(sys.stdin)["env"])')
           [ "$ENV" = "prod" ] || { echo "❌ prod 以外を指しています"; exit 1; }
           curl -fsS "${{ steps.deploy.outputs.url }}/api/areas" > /dev/null
-          echo "✅ 本番デプロイ完了: ${{ steps.deploy.outputs.url }}"
+          echo "✅ 本番デプロイ完了 (${{ github.ref_name }}): ${{ steps.deploy.outputs.url }}"

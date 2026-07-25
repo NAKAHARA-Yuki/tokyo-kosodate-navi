@@ -118,8 +118,19 @@ make deploy ENV=staging   # Cloud Run へデプロイ
 - 推測でモデル名やAPIの仕様を書かない。動かして確かめてから書く。
 - 本番データを触る操作（`make etl` など）は影響を明示してから実行する。
 
+## ブランチとリリース
+
+GitHub Flow + タグでの本番リリース。詳細は [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+- `main` へ直接コミットしない。`<種別>/<説明>` のトピックブランチから PR
+- `main` へは **Squash merge** のみ
+- `main` マージ → staging へ自動デプロイ
+- **本番は `v*.*.*` タグの push でリリース**（main の HEAD ではない）
+- 切り戻しは前のタグを再デプロイ
+
 ## 変更したら
 
-1. `make lint && make test` を通す
-2. データモデルを変えたら `docs/data-model.md` と本ファイルの該当箇所も更新
-3. 非自明な設計判断をしたら `docs/adr/` に1枚足す
+1. `make check`（lint + test + e2e）を通す
+2. 画面の挙動を変えたら E2E を追加/更新する（staging の実データでも通る書き方で）
+3. データモデルを変えたら `docs/data-model.md` と本ファイルの該当箇所も更新
+4. 非自明な設計判断をしたら `docs/adr/` に1枚足す

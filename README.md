@@ -87,13 +87,24 @@ make graph ENV=dev        # PROPERTY GRAPH 再作成
 make verify ENV=dev       # 検証クエリ
 ```
 
-## デプロイ
+## ブランチ戦略とデプロイ
+
+GitHub Flow + タグでの本番リリース。`main` へは **Squash merge** のみ。
 
 ```
-PR            → CI: lint + テスト + E2E(スタブ) + Docker build
-main へマージ  → staging へ自動デプロイ → E2E(staging 実データ)
-本番リリース   → GitHub Actions を手動実行 + 承認 → prod へデプロイ
+PR                    → CI: lint + テスト + E2E(スタブ) + Docker build
+main へマージ          → staging へ自動デプロイ → E2E(staging 実データ)
+v*.*.* タグを push     → 承認 → 本番へデプロイ → スモーク
 ```
+
+本番は「main の HEAD」ではなく「タグを打ったコミット」を出します。
+何が入っているかを特定でき、切り戻しは前のタグを再デプロイするだけで済みます。
+
+```bash
+git tag -a v1.2.0 -m "タイムラインビューを追加" && git push origin v1.2.0
+```
+
+詳細は [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## ドキュメント
 

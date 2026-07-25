@@ -10,20 +10,86 @@
    年齢・地域の絞り込みを変えるときは必ずテストと実データでの確認をセットにしてください。
 3. **推測でコードや文書を書かない。** モデル名・API仕様・データの中身は動かして確かめる。
 
-## ブランチ運用
+## ブランチ戦略
 
-`main` は常にデプロイ可能な状態を保ちます。直接コミットしません。
+**GitHub Flow + タグでの本番リリース**を採用しています。
+`develop` や `release` ブランチは作りません（リリース列が1本しかなく、二重管理になるだけのため）。
 
 ```
-main
- └─ feat/timeline-view      新機能
- └─ fix/age-filter-leak     バグ修正
- └─ docs/adr-graph-schema   ドキュメント
- └─ chore/bump-deps         雑務・依存更新
- └─ refactor/etl-split      挙動を変えないリファクタ
+main ← 常にデプロイ可能。直接コミットしない
+ ├─ feat/timeline-view      新機能
+ ├─ fix/age-filter-leak     バグ修正
+ ├─ docs/adr-graph-schema   ドキュメント
+ ├─ refactor/etl-split      挙動を変えないリファクタ
+ ├─ chore/bump-deps         雑務・依存更新
+ └─ hotfix/xxx              本番の緊急修正（後述）
 ```
 
-ブランチ名は `<種別>/<英小文字とハイフンの短い説明>`。
+ブランチ名は `<種別>/<英小文字とハイフンの短い説明>`。トピックブランチは短命に保ち、
+長生きさせるとコンフリクトと巨大 PR の原因になります。
+
+### main へのマージは Squash merge
+
+PR を1コミットにまとめて `main` に入れます。
+
+- `main` の履歴が「1行1変更」で読める
+- 切り戻しが `git revert <commit>` 1発で済む
+- PR 内の試行錯誤のコミットが `main` を汚さない
+
+GitHub のリポジトリ設定で **Squash merge のみ有効**にしてください
+（Merge commit / Rebase merge は無効化）。
+
+### 環境への反映
+
+```
+PR                    → CI（lint / test / E2E(スタブ) / Docker build）
+main へ Squash merge  → staging へ自動デプロイ → E2E(staging 実データ)
+v*.*.* タグを push    → 承認 → 本番へデプロイ → スモーク
+```
+
+**本番は「main の HEAD」ではなく「タグを打ったコミット」を出します。**
+こうしないと本番に何が入っているか特定できず、切り戻し先も分かりません。
+
+### リリース手順
+
+staging での確認が済んだら、`main` でタグを打ちます。
+
+```bash
+git checkout main && git pull
+git tag -a v1.2.0 -m "タイムラインビューを追加"
+git push origin v1.2.0
+```
+
+タグ push で本番デプロイのワークフローが起動し、
+GitHub Environments（`production`）の承認待ちになります。
+
+バージョンは [セマンティックバージョニング](https://semver.org/lang/ja/)に準じます。
+
+| 上げる桁 | 例 |
+|---|---|
+| MAJOR | 互換性のない変更（API の破壊的変更、データモデルの非互換変更） |
+| MINOR | 後方互換のある機能追加 |
+| PATCH | バグ修正のみ |
+
+### 切り戻し
+
+前のタグを `workflow_dispatch` の `prod` で再デプロイします。
+Cloud Run のラベルに `release` と `commit` を入れているので、
+今の本番がどのタグかは `make url` / GCP コンソールから確認できます。
+
+### 本番の緊急修正（hotfix）
+
+`main` に未リリースの変更が溜まっている状態で本番だけ直したいときは、
+**タグから枝を切ります**（main から切ると未リリース分を巻き込むため）。
+
+```bash
+git checkout -b hotfix/fix-age-filter v1.2.0
+# 修正してコミット
+git tag -a v1.2.1 -m "年齢絞り込みの不具合を修正"
+git push origin v1.2.1          # → 本番へ
+```
+
+修正内容は忘れずに `main` にも入れてください（PR を出すか cherry-pick）。
 
 ## コミットメッセージ
 
