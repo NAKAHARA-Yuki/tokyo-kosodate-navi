@@ -16,16 +16,13 @@ Gemini は制度のやさしい解説や書類添削といった伴走サポー�
 
 import os
 
+from config import APP_ENV, DATASET_ID, GRAPH_NAME, LOCATION, PROJECT_ID
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from google.cloud import bigquery
 from pydantic import BaseModel, Field
 
-PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "opendatahackathon-503500")
-DATASET_ID = "gov_knowledge_db"
-GRAPH_NAME = f"{PROJECT_ID}.{DATASET_ID}.kosodate_graph"
-LOCATION = "asia-northeast1"
 GEMINI_MODEL = "gemini-3.5-flash-lite"
 # 行政制度の言い換えは誤りが許されないため、軽量モデルでも thinking を厚めに確保する。
 # thinking_level と thinking_budget は併用不可（400になる）。実測で thinking_level=HIGH の方が
@@ -636,4 +633,5 @@ def draft_review(req: DraftReviewRequest):
 
 @app.get("/healthz")
 def healthz():
-    return {"status": "ok"}
+    # どの環境・どのデータセットを見ているかは、デプロイ事故の切り分けで必ず要る
+    return {"status": "ok", "env": APP_ENV, "dataset": DATASET_ID}

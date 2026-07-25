@@ -33,3 +33,7 @@ scratch/
 # レジストリJSONは92MBあるためコミットしない（ETLが実行時にURLから取得する）
 *.json.gz
 data/
+
+# Playwright
+test-results/
+playwright-report/

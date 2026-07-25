@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   quality:
-    name: Lint & Test
+    name: Lint & Unit/Integration Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,7 +39,41 @@ jobs:
 
       # GCP 認証は不要。BigQuery / Gemini はテスト内でモックしている。
       - name: Test (pytest)
-        run: pytest
+        run: pytest tests
+
+  e2e:
+    name: E2E (stub)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: 依存関係をインストール
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Playwright のブラウザを用意
+        run: playwright install --with-deps chromium
+
+      # BigQuery と Gemini をスタブに差し替えたアプリに対して実行するため GCP 認証は不要。
+      # 実データでの確認は staging へのデプロイ後に別途行う（deploy.yml）。
+      - name: E2E テスト
+        run: pytest e2e
+
+      - name: 失敗時のスクリーンショットを保存
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: |
+            test-results/
+          if-no-files-found: ignore
 
   docker:
     name: Docker build

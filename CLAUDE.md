@@ -36,26 +36,46 @@ src/            ETL とグラフ構築（ローカル or CI から実行）
   create_graph.sql/.py  PROPERTY GRAPH 定義
   verify_graph.py 動作検証クエリ
 app/            Cloud Run で動く FastAPI アプリ
+  config.py       環境（dev/staging/prod）ごとの設定。ETL からも参照する
   main.py         API 本体
   templates/index.html  フロントエンド（素のJS + cytoscape.js。Next.jsではない）
-tests/          pytest
+tests/          ユニット・API結合テスト（BigQuery はモック）
+e2e/            Playwright による画面操作テスト
 docs/           設計ドキュメントと ADR
 ```
 
+## 環境（dev / staging / prod）
+
+GCP プロジェクトは1つのまま、**BigQuery データセットと Cloud Run サービスを分けている**。
+切り替えは `APP_ENV`。**未指定なら dev**（誤って本番を触らないため）。詳細は
+[docs/adr/0004](docs/adr/0004-environments.md)。
+
+| 環境 | データセット | 用途 |
+|---|---|---|
+| dev | `gov_knowledge_db_dev` | 各自の検証。壊してよい |
+| staging | `gov_knowledge_db_staging` | main マージで自動デプロイ。本番前ゲート |
+| prod | `gov_knowledge_db` | 公開環境 |
+
+`/healthz` が `{"env": ..., "dataset": ...}` を返すので、どこを見ているかは常に確認できる。
+
 ## よく使うコマンド
 
-`make help` で一覧。主なもの:
+`make help` で一覧。`ENV=` で環境を指定する（既定は dev）。
 
 ```bash
-make setup     # 仮想環境と依存関係
-make lint      # ruff check + format --check
-make fmt       # 自動整形
-make test      # pytest
-make dev       # ローカルでアプリ起動 (http://localhost:8080)
-make etl       # BigQuery へデータ投入（本番データを上書きするので注意）
-make graph     # PROPERTY GRAPH 再作成
-make verify    # グラフの動作検証
-make deploy    # Cloud Run へデプロイ
+make setup                # 仮想環境・依存関係・Playwright
+make lint                 # ruff check + format --check
+make fmt                  # 自動整形
+make test                 # ユニット・API結合テスト（GCP不要）
+make e2e                  # E2E（スタブ版アプリを自動起動。GCP不要）
+make check                # lint + test + e2e
+make dev                  # ローカル起動 (http://localhost:8080)
+
+make etl ENV=dev          # BigQuery へデータ投入（対象環境を上書き。確認あり）
+make graph ENV=dev        # PROPERTY GRAPH 再作成
+make verify ENV=dev       # グラフの動作検証
+make clone-data ENV=dev   # 本番データを dev にコピー（ETLより速い）
+make deploy ENV=staging   # Cloud Run へデプロイ
 ```
 
 ## データモデルの要点
@@ -79,7 +99,13 @@ make deploy    # Cloud Run へデプロイ
 - **cytoscape の `text-wrap: wrap` は空白でしか折り返さない。** 空白のない日本語は
   改行されずノードからはみ出す。`wrapLabel()` で自前で改行を入れている。
 - **`preset` レイアウトの `positions` にはノードIDではなく要素が渡る。** `ele.id()` で引く。
-- **レイアウトのアニメーション完了前に `cy.fit()` すると見切れる。** `layoutstop` を待つ。
+- **`preset` レイアウトはアニメーションさせない。** `animate: true` にすると
+  `cy.fit()` がアニメーション途中の座標で走り、スマホでグラフが画面外にはみ出す。
+  座標は計算済みなのでアニメーションの必要がない。
+- **layout インスタンスの `one('layoutstop')` は発火しない。** 購読するなら `cy.one('layoutstop')`。
+  これに気づかず、スマホで fit が一度も走っていない状態が続いていた。
+- **CSS のベース定義はメディアクエリより前に置く。** 後ろに置くと同じ詳細度で後勝ちになり、
+  メディアクエリ内の指定が無効になる（詳細シートの閉じるボタンが表示されない不具合の原因）。
 - **元データは本文に `タイトル;https://...` 形式でリンクを直接埋め込んでいる。**
   `extract_links()` で全テキスト列から分離済み。新しいテキスト列を追加するときも通すこと。
 - **必要書類欄を読点「、」で分割してはいけない。** 一文が途中で切れて意味不明な書類ノードになる。

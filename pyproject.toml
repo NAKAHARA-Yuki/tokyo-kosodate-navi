@@ -28,9 +28,10 @@ ignore = [
 "tests/*" = ["B018"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# testpaths は指定しない（tests / e2e を明示的に選んで実行する）
 pythonpath = ["src", "app"]
 addopts = "-q --strict-markers"
 markers = [
     "gcp: GCP認証が必要なテスト（CIでは実行しない）",
+    "smoke: デプロイ先に対しても実行できる最小限の確認",
 ]

@@ -26,12 +26,15 @@ import requests
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)
+# 環境（dev/staging/prod）ごとのデータセット定義はアプリと共通のものを使う
+sys.path.insert(0, os.path.join(os.path.dirname(_HERE), "app"))
+from config import APP_ENV, DATASET_ID, LOCATION  # noqa: E402
+
 from age_rules import extract_age_range, is_prenatal  # noqa: E402
 
 SOURCE_URL = "https://data.storage.data.metro.tokyo.lg.jp/digitalservice/130001_kosodateshienseido_tokyo.json"
-DATASET_ID = "gov_knowledge_db"
-LOCATION = "asia-northeast1"
 
 # 制度ID/制度名など、想定される代替フィールド名（自動判別用の候補）
 BENEFIT_ID_CANDIDATES = ["制度ID", "benefit_id", "benefitId", "id", "psid"]
@@ -1034,7 +1037,8 @@ def load_tables(client: bigquery.Client, project_id: str, tables: dict):
 
 def main():
     project_id = os.environ.get("GCP_PROJECT_ID", "opendatahackathon-503500")
-    print(f"[main] using GCP project: {project_id}", flush=True)
+    # どの環境に書き込むかは事故防止のため必ず出す
+    print(f"[main] env={APP_ENV} project={project_id} dataset={DATASET_ID}", flush=True)
 
     payload = fetch_json(SOURCE_URL)
     records = extract_records(payload)

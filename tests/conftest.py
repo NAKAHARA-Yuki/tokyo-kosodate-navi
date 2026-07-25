@@ -5,8 +5,15 @@ BigQuery をモックして、GCP 認証なしで CI からエンドポイント
 BigQuery そのものの挙動ではない。
 """
 
+import os
+
 import pytest
-from fastapi.testclient import TestClient
+
+# main / config を import する前に環境を固定する。
+# テストが誤って本番データセットを指す設定で走らないようにするため。
+os.environ.setdefault("APP_ENV", "dev")
+
+from fastapi.testclient import TestClient  # noqa: E402
 
 
 class FakeRow(dict):

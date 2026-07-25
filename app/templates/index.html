@@ -215,6 +215,25 @@
   .stage-card .m { color: var(--muted); font-size: 11px; }
   .stage-empty { color: var(--muted); font-size: 12px; }
 
+  /* 詳細シートの閉じるボタン。スマホのみ表示する（下のメディアクエリで block にする）。
+     ※このベース定義は必ずメディアクエリより前に置くこと。
+       後ろに置くと同じ詳細度で後勝ちになり、スマホでも表示されなくなる。 */
+  #detail-close {
+    display: none;
+    position: absolute;
+    right: 10px;
+    top: 10px;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
   /* ===== スマホ最適化: 1カラム縦積み + 「検索」「グラフ」タブ切り替え ===== */
   @media (max-width: 767px) {
     #layout {
@@ -302,21 +321,6 @@
     .stage-card { flex: 1 1 100%; max-width: none; }
   }
 
-  #detail-close {
-    display: none;
-    position: absolute;
-    right: 10px;
-    top: 10px;
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    border: 1px solid var(--border);
-    background: var(--panel);
-    color: var(--text);
-    font-size: 16px;
-    line-height: 1;
-    cursor: pointer;
-  }
 </style>
 </head>
 <body>
@@ -725,23 +729,21 @@ async function focusOnBenefit(benefitId) {
   stack(statusIds, -COLUMN_GAP / 2);
   stack(docIds, COLUMN_GAP / 2);
 
-  const layout = cy.layout({
+  // preset は座標が計算済みなのでアニメーションしない。
+  // animate:true だと fit がアニメーション途中の座標で走り、グラフが画面外にはみ出す。
+  // （layout インスタンスの layoutstop は発火しないため、そこで待つこともできない）
+  cy.layout({
     name: 'preset',
     // preset の positions 関数には要素(ele)が渡ってくるため ele.id() で引く（idの文字列そのものではない点に注意）
     positions: ele => positions[ele.id()] || { x: 0, y: 260 },
-    animate: true,
-    animationDuration: 400,
-    fit: false, // アニメーション途中の座標で fit すると見切れるため、完了後に自前で行う
-  });
-  // レイアウト完了後に fit する。run() 直後だとまだ座標が動いていて中途半端に収まる。
-  layout.one('layoutstop', () => {
-    cy.fit(undefined, isMobile() ? 24 : 60);
-    if (isMobile()) {
-      // 下部の詳細シートに隠れないよう少し上に寄せる
-      cy.panBy({ x: 0, y: -cy.height() * 0.14 });
-    }
-  });
-  layout.run();
+    animate: false,
+    fit: false,
+  }).run();
+  cy.fit(undefined, isMobile() ? 24 : 60);
+  if (isMobile()) {
+    // 下部の詳細シートに隠れないよう少し上に寄せる
+    cy.panBy({ x: 0, y: -cy.height() * 0.14 });
+  }
   document.getElementById('back-button').style.display = lastSearchItems.length ? 'block' : 'none';
 
   if (benefitNode) {

@@ -34,7 +34,19 @@ class TestHealth:
     def test_healthz(self, client):
         res = client.get("/healthz")
         assert res.status_code == 200
-        assert res.json() == {"status": "ok"}
+        body = res.json()
+        assert body["status"] == "ok"
+        # どの環境・データセットを見ているかはデプロイ事故の切り分けに要る
+        assert body["env"] in ("dev", "staging", "prod")
+        assert body["dataset"]
+
+    def test_healthz_reports_test_env(self, client):
+        """テストは dev 設定で動く（本番データセットを指していないこと）。"""
+        assert res_dataset(client) != "gov_knowledge_db"
+
+
+def res_dataset(client) -> str:
+    return client.get("/healthz").json()["dataset"]
 
 
 class TestSearchBenefits:

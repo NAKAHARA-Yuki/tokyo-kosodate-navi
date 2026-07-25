@@ -1,0 +1,148 @@
+name: Deploy
+
+# main にマージされたら staging に自動デプロイし、実データで E2E を回す。
+# 本番は GitHub Environments の承認を挟んだ手動実行のみ。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: デプロイ先
+        required: true
+        default: staging
+        type: choice
+        options: [staging, prod]
+
+concurrency:
+  group: deploy-${{ github.event.inputs.target || 'staging' }}
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT_ID: opendatahackathon-503500
+  REGION: asia-northeast1
+
+jobs:
+  deploy-staging:
+    name: Deploy to staging
+    if: github.event_name == 'push' || github.event.inputs.target == 'staging'
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: ${{ steps.deploy.outputs.url }}
+    permissions:
+      contents: read
+      id-token: write # Workload Identity 連携で GCP に認証する
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - id: deploy
+        name: Cloud Run にデプロイ
+        run: |
+          gcloud run deploy kosodate-graph-viewer-staging \
+            --source ./app \
+            --project "$GCP_PROJECT_ID" \
+            --region "$REGION" \
+            --allow-unauthenticated \
+            --set-env-vars "GCP_PROJECT_ID=$GCP_PROJECT_ID,APP_ENV=staging" \
+            --memory 512Mi --cpu 1 --min-instances 0 --max-instances 3 --timeout 120 \
+            --quiet
+          URL=$(gcloud run services describe kosodate-graph-viewer-staging \
+            --project "$GCP_PROJECT_ID" --region "$REGION" --format='value(status.url)')
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: 環境が staging を指しているか確認
+        run: |
+          ENV=$(curl -fsS "${{ steps.deploy.outputs.url }}/healthz" | python3 -c 'import json,sys; print(json.load(sys.stdin)["env"])')
+          echo "デプロイ先の APP_ENV: $ENV"
+          [ "$ENV" = "staging" ] || { echo "❌ staging 以外を指しています"; exit 1; }
+
+  e2e-staging:
+    name: E2E against staging (real data)
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: 依存関係をインストール
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Playwright のブラウザを用意
+        run: playwright install --with-deps chromium
+
+      # スタブではなく実際にデプロイされた staging を叩く。
+      # BigQuery のスキーマ変更やデータの欠損は、ここで初めて検出できる。
+      - name: E2E テスト（staging 実データ）
+        env:
+          E2E_BASE_URL: ${{ needs.deploy-staging.outputs.url }}
+        run: pytest e2e
+
+      - name: 失敗時のスクリーンショットを保存
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-staging-artifacts
+          path: test-results/
+          if-no-files-found: ignore
+
+  deploy-prod:
+    name: Deploy to production
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'prod'
+    runs-on: ubuntu-latest
+    # GitHub Environments 側で required reviewers を設定し、承認を必須にする
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - id: deploy
+        name: Cloud Run にデプロイ
+        run: |
+          gcloud run deploy kosodate-graph-viewer \
+            --source ./app \
+            --project "$GCP_PROJECT_ID" \
+            --region "$REGION" \
+            --allow-unauthenticated \
+            --set-env-vars "GCP_PROJECT_ID=$GCP_PROJECT_ID,APP_ENV=prod" \
+            --memory 512Mi --cpu 1 --min-instances 0 --max-instances 3 --timeout 120 \
+            --quiet
+          URL=$(gcloud run services describe kosodate-graph-viewer \
+            --project "$GCP_PROJECT_ID" --region "$REGION" --format='value(status.url)')
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: 本番のスモークテスト
+        run: |
+          ENV=$(curl -fsS "${{ steps.deploy.outputs.url }}/healthz" | python3 -c 'import json,sys; print(json.load(sys.stdin)["env"])')
+          [ "$ENV" = "prod" ] || { echo "❌ prod 以外を指しています"; exit 1; }
+          curl -fsS "${{ steps.deploy.outputs.url }}/api/areas" > /dev/null
+          echo "✅ 本番デプロイ完了: ${{ steps.deploy.outputs.url }}"

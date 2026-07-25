@@ -54,21 +54,45 @@ gcloud auth application-default login   # 未認証の場合
 make dev                  # http://localhost:8080
 ```
 
+## 環境
+
+GCP プロジェクトは1つのまま、BigQuery データセットと Cloud Run サービスを分けています。
+切り替えは `APP_ENV`（`make` なら `ENV=`）。**未指定なら dev** です。
+
+| 環境 | データセット | 用途 |
+|---|---|---|
+| dev | `gov_knowledge_db_dev` | 各自の検証。壊してよい |
+| staging | `gov_knowledge_db_staging` | main マージで自動デプロイ。本番前ゲート |
+| prod | `gov_knowledge_db` | 公開環境 |
+
+`/healthz` が現在の環境とデータセットを返します。
+
 ## 開発
 
 ```bash
-make lint    # ruff（チェックのみ）
-make fmt     # 自動整形
-make test    # pytest
-make help    # コマンド一覧
+make lint     # ruff（チェックのみ）
+make fmt      # 自動整形
+make test     # ユニット・API結合テスト（GCP不要）
+make e2e      # E2E（ブラウザ操作。GCP不要）
+make check    # 上記まとめて
+make help     # コマンド一覧
 ```
 
-データパイプラインを回す場合（**本番の BigQuery を上書きします**）:
+データパイプラインを回す場合（**対象環境の BigQuery を上書きします**）:
 
 ```bash
-make etl      # レジストリ取得 → 整形 → ロード（5分程度）
-make graph    # PROPERTY GRAPH 再作成
-make verify   # 検証クエリ
+make clone-data ENV=dev   # 本番データを dev にコピー（ETLより速い）
+make etl ENV=dev          # レジストリ取得 → 整形 → ロード（5分程度）
+make graph ENV=dev        # PROPERTY GRAPH 再作成
+make verify ENV=dev       # 検証クエリ
+```
+
+## デプロイ
+
+```
+PR            → CI: lint + テスト + E2E(スタブ) + Docker build
+main へマージ  → staging へ自動デプロイ → E2E(staging 実データ)
+本番リリース   → GitHub Actions を手動実行 + 承認 → prod へデプロイ
 ```
 
 ## ドキュメント
