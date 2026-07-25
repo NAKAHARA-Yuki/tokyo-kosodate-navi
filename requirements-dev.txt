@@ -1,0 +1,7 @@
+# 開発・CI 用（本番イメージには入れない）
+-r requirements.txt
+-r app/requirements.txt
+
+pytest>=8.0.0
+httpx>=0.27.0          # FastAPI TestClient が使う
+ruff>=0.6.0

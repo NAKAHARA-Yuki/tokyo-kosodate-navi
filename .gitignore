@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# 仮想環境
+.venv/
+venv/
+
+# 環境変数（GCPプロジェクトIDなど。.env.example を複製して使う）
+.env
+.env.local
+
+# 認証情報は絶対にコミットしない
+*-service-account.json
+*credentials*.json
+!.vscode/*.json
+
+# エディタ / OS
+.DS_Store
+.idea/
+*.swp
+
+# 作業用の一時ファイル・ダウンロードしたデータ
+tmp/
+scratch/
+*.log
+# レジストリJSONは92MBあるためコミットしない（ETLが実行時にURLから取得する）
+*.json.gz
+data/

@@ -1,0 +1,36 @@
+[project]
+name = "kosodate-knowledge-graph"
+version = "0.1.0"
+description = "東京都 子育て支援制度ナレッジグラフ"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+exclude = [".venv", "__pycache__"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle
+    "F",   # pyflakes
+    "I",   # import順
+    "UP",  # 古い書き方の指摘
+    "B",   # バグになりやすい書き方
+    "SIM", # 冗長な書き方
+]
+ignore = [
+    "E501",  # 行長は formatter に任せる
+    "B008",  # FastAPI の Depends/Query をデフォルト引数に置くのは正しい書き方
+]
+
+[tool.ruff.lint.per-file-ignores]
+# テストではフィクスチャの再代入やマジックナンバーを許容する
+"tests/*" = ["B018"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "app"]
+addopts = "-q --strict-markers"
+markers = [
+    "gcp: GCP認証が必要なテスト（CIでは実行しない）",
+]

@@ -1,0 +1,1005 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<title>子育て支援制度ナレッジグラフ</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script src="https://unpkg.com/cytoscape@3.29.2/dist/cytoscape.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1420;
+    --panel: #171e2e;
+    --border: #2a3348;
+    --text: #e7ebf3;
+    --muted: #93a0bb;
+    --accent: #5b8cff;
+    --benefit: #5b8cff;
+    --status: #34c38f;
+    --document: #f2b84b;
+    --me: #e356c9;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --border: #dde3ee;
+      --text: #1a2233;
+      --muted: #5c6b85;
+      --accent: #2f5fe0;
+      --benefit: #2f5fe0;
+      --status: #1f9d70;
+      --document: #c98a1c;
+      --me: #b8299f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100dvh;
+    overflow: hidden;
+    -webkit-text-size-adjust: 100%;
+  }
+  #layout {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    height: 100dvh;
+  }
+  /* スマホではタブ切り替えのみ使うため、デスクトップでは隠す */
+  #mobile-tabs { display: none; }
+  #sidebar {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 16px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  h1 {
+    font-size: 16px;
+    margin: 0 0 4px;
+  }
+  .sub {
+    color: var(--muted);
+    font-size: 12px;
+    margin: 0;
+  }
+  input, select {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    font-size: 13px;
+  }
+  #categories {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-height: 140px;
+    overflow-y: auto;
+  }
+  .chip {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    color: var(--muted);
+    background: transparent;
+  }
+  .chip.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+  #results {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  .result-item {
+    text-align: left;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .result-item:hover, .result-item.active {
+    border-color: var(--accent);
+  }
+  .result-item .title { font-weight: 600; display: block; }
+  .result-item .cat { color: var(--muted); font-size: 11px; }
+  #cy { width: 100%; height: 100vh; }
+  #detail {
+    position: absolute;
+    right: 16px;
+    top: 16px;
+    max-width: 320px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    font-size: 12px;
+    display: none;
+  }
+  #detail.show { display: block; }
+  #detail h3 { margin: 0 0 6px; font-size: 14px; }
+  #legend {
+    position: absolute;
+    left: 356px;
+    bottom: 16px;
+    display: flex;
+    gap: 14px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+  #wrap { position: relative; }
+
+  /* グラフ / タイムライン の切り替えタブ */
+  #view-tabs {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    display: flex;
+    gap: 4px;
+    z-index: 15;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 4px;
+  }
+  #view-tabs button {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  #view-tabs button.active { background: var(--accent); color: #fff; }
+
+  /* タイムライン（ライフステージ別の制度一覧） */
+  #timeline {
+    display: none;
+    height: 100%;
+    overflow: auto;
+    padding: 20px 20px 70px;
+  }
+  #timeline.show { display: block; }
+  .stage {
+    position: relative;
+    padding-left: 26px;
+    padding-bottom: 22px;
+    border-left: 2px solid var(--border);
+  }
+  .stage:last-child { border-left-color: transparent; }
+  .stage::before {
+    content: '';
+    position: absolute;
+    left: -8px;
+    top: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 3px solid var(--bg);
+  }
+  .stage h4 { margin: 0 0 8px; font-size: 14px; }
+  .stage-items { display: flex; flex-wrap: wrap; gap: 8px; }
+  .stage-card {
+    flex: 1 1 240px;
+    max-width: 340px;
+    text-align: left;
+    padding: 10px 12px;
+    border-radius: 9px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .stage-card:hover { border-color: var(--accent); }
+  .stage-card .t { font-weight: 600; display: block; margin-bottom: 2px; }
+  .stage-card .m { color: var(--muted); font-size: 11px; }
+  .stage-empty { color: var(--muted); font-size: 12px; }
+
+  /* ===== スマホ最適化: 1カラム縦積み + 「検索」「グラフ」タブ切り替え ===== */
+  @media (max-width: 767px) {
+    #layout {
+      grid-template-columns: 1fr;
+      grid-template-rows: 1fr;
+      height: calc(100dvh - 49px); /* タブバーの高さ分を引く */
+    }
+    #mobile-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+    #mobile-tabs button {
+      flex: 1;
+      padding: 12px 8px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+    }
+    #mobile-tabs button.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    #sidebar {
+      border-right: none;
+      padding: 12px;
+      gap: 12px;
+      min-height: 0;
+    }
+    #wrap { min-height: 0; }
+    /* タブで表示を出し分ける（.mobile-hidden が付いた方を隠す） */
+    #sidebar.mobile-hidden, #wrap.mobile-hidden { display: none; }
+
+    h1 { font-size: 15px; }
+    /* iOS で入力時に自動ズームされないよう 16px 以上にする */
+    input, select { font-size: 16px; padding: 10px 12px; }
+    #categories { max-height: 92px; }
+    .chip { padding: 6px 12px; font-size: 12px; }
+    .result-item { padding: 12px; font-size: 13px; }
+    .result-item .cat { font-size: 12px; }
+
+    #cy { height: 100%; }
+    /* 詳細は下からのシートとして表示し、グラフを隠さないようにする */
+    #detail {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      top: auto;
+      max-width: none;
+      max-height: 42dvh;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      border-radius: 14px 14px 0 0;
+      border-left: none;
+      border-right: none;
+      border-bottom: none;
+      padding: 16px;
+      font-size: 13px;
+      box-shadow: 0 -6px 24px rgba(0,0,0,0.18);
+      z-index: 20;
+    }
+    #detail h3 { font-size: 15px; padding-right: 32px; }
+    #detail-close { display: block; }
+    #legend {
+      left: 8px;
+      right: 8px;
+      bottom: 8px;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: 10px;
+      background: color-mix(in srgb, var(--panel) 88%, transparent);
+      padding: 6px 8px;
+      border-radius: 8px;
+    }
+    #legend .sub { display: none; }
+    #back-button { font-size: 13px; padding: 10px 14px; }
+    #view-tabs { right: 8px; bottom: 44px; }
+    #timeline { padding: 14px 14px 110px; }
+    .stage-card { flex: 1 1 100%; max-width: none; }
+  }
+
+  #detail-close {
+    display: none;
+    position: absolute;
+    right: 10px;
+    top: 10px;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<div id="mobile-tabs">
+  <button id="tab-search" class="active" type="button">🔍 検索</button>
+  <button id="tab-graph" type="button">🕸 グラフ</button>
+</div>
+
+<div id="view-tabs">
+  <button id="view-graph" class="active" type="button">🕸 グラフ</button>
+  <button id="view-timeline" type="button">📅 タイムライン</button>
+</div>
+
+<div id="layout">
+  <div id="sidebar">
+    <div>
+      <h1>子育て支援制度ナレッジグラフ</h1>
+      <p class="sub">東京都子育て支援制度レジストリ (BigQuery Graph)</p>
+    </div>
+    <input id="search" type="text" placeholder="制度名で検索 (例: 予防接種)" />
+
+    <div>
+      <p class="sub" style="margin-bottom:6px;">属性で絞り込む（ユーザープロフィール想定）</p>
+      <select id="area-select" style="margin-bottom:6px;">
+        <option value="">居住地を選択（すべて）</option>
+      </select>
+      <div style="display:flex; gap:6px;">
+        <input id="age-years" type="number" min="0" max="20" placeholder="年齢(歳)" style="width:50%;" />
+        <input id="age-months" type="number" min="0" max="11" placeholder="+ヶ月" style="width:50%;" />
+      </div>
+    </div>
+
+    <div id="categories"></div>
+    <div id="results"></div>
+  </div>
+  <div id="wrap">
+    <div id="cy"></div>
+    <div id="timeline"></div>
+    <button id="back-button" style="display:none; position:absolute; left:16px; top:16px; padding:8px 14px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); cursor:pointer; font-size:12px;">← 検索結果に戻る</button>
+    <div id="detail">
+      <button id="detail-close" type="button" aria-label="閉じる">×</button>
+    </div>
+    <div id="legend">
+      <span><span class="dot" style="background:var(--me)"></span>自分</span>
+      <span><span class="dot" style="background:var(--benefit)"></span>制度 (Benefit)</span>
+      <span><span class="dot" style="background:var(--status)"></span>条件 (Status)</span>
+      <span><span class="dot" style="background:var(--document)"></span>書類 (Document)</span>
+      <span class="sub">制度ノードをクリックすると詳細だけに絞り込まれます</span>
+    </div>
+  </div>
+</div>
+
+<script>
+const colors = {
+  Benefit: getComputedStyle(document.documentElement).getPropertyValue('--benefit').trim(),
+  Status: getComputedStyle(document.documentElement).getPropertyValue('--status').trim(),
+  Document: getComputedStyle(document.documentElement).getPropertyValue('--document').trim(),
+  Me: getComputedStyle(document.documentElement).getPropertyValue('--me').trim(),
+};
+const ME_NODE_ID = 'me';
+const isMobile = () => window.matchMedia('(max-width: 767px)').matches;
+
+// ---- 条件/書類ノードのラベル整形とサイズ計算 ----
+const NODE_FONT_SIZE = 12;
+const BOX_PAD_X = 12;
+const BOX_LINE_HEIGHT = 17;
+const BOX_MAX_WIDTH = 230;
+const MAX_LABEL_LINES = 2;
+
+// 全角はフォントサイズとほぼ同じ幅、半角はその約55%として文字列の描画幅を見積もる
+function textWidth(text) {
+  let w = 0;
+  for (const ch of text ?? '') {
+    w += /[\x00-\xff｡-ﾟ]/.test(ch) ? NODE_FONT_SIZE * 0.55 : NODE_FONT_SIZE;
+  }
+  return w;
+}
+
+/**
+ * ラベルを箱幅に収まるよう自前で改行する。
+ * cytoscape の text-wrap:'wrap' は空白位置でしか折り返さないため、
+ * 空白を含まない日本語では改行されず箱からはみ出してしまう。
+ */
+function wrapLabel(text) {
+  const limit = BOX_MAX_WIDTH - BOX_PAD_X * 2;
+  const lines = [];
+  let line = '';
+  let lineW = 0;
+  for (const ch of text ?? '') {
+    const cw = /[\x00-\xff｡-ﾟ]/.test(ch) ? NODE_FONT_SIZE * 0.55 : NODE_FONT_SIZE;
+    if (lineW + cw > limit && line) {
+      lines.push(line);
+      line = '';
+      lineW = 0;
+      if (lines.length === MAX_LABEL_LINES) break;
+    }
+    line += ch;
+    lineW += cw;
+  }
+  if (line && lines.length < MAX_LABEL_LINES) lines.push(line);
+  // 入りきらなかった分は末尾を省略記号にする
+  if (lines.length === MAX_LABEL_LINES && textWidth(text) > limit * MAX_LABEL_LINES) {
+    lines[MAX_LABEL_LINES - 1] = lines[MAX_LABEL_LINES - 1].slice(0, -1) + '…';
+  }
+  return lines.join('\n');
+}
+
+// 改行済みラベルから箱の幅・高さを決める（固定高さだと文字がはみ出す）
+const boxSizeCache = new Map();
+function boxSize(label) {
+  if (boxSizeCache.has(label)) return boxSizeCache.get(label);
+  const lines = String(label ?? '').split('\n');
+  const widest = Math.max(...lines.map(textWidth));
+  const size = {
+    w: Math.min(BOX_MAX_WIDTH, Math.max(100, widest + BOX_PAD_X * 2)),
+    h: lines.length * BOX_LINE_HEIGHT + 16,
+  };
+  boxSizeCache.set(label, size);
+  return size;
+}
+
+const cy = cytoscape({
+  container: document.getElementById('cy'),
+  style: [
+    {
+      selector: 'node',
+      style: {
+        'background-color': ele => colors[ele.data('type')] || '#888',
+        'label': 'data(label)',
+        'color': '#fff',
+        'text-outline-width': 2,
+        'text-outline-color': ele => colors[ele.data('type')] || '#888',
+        'font-size': 10,
+        'width': ele => (ele.data('type') === 'Me' ? 54 : ele.data('type') === 'Benefit' ? 46 : 26),
+        'height': ele => (ele.data('type') === 'Me' ? 54 : ele.data('type') === 'Benefit' ? 46 : 26),
+        'text-wrap': 'wrap',
+        'text-max-width': '90px',
+        'border-width': ele => (ele.data('type') === 'Me' ? 3 : 0),
+        'border-color': '#fff',
+      },
+    },
+    {
+      // 条件(Status)・書類(Document)は文字量が多いので、円ではなく文字が収まる角丸ボックスにする
+      selector: 'node[type = "Status"], node[type = "Document"]',
+      style: {
+        shape: 'round-rectangle',
+        // ラベルの実測幅から箱のサイズを決める。固定高さだと折り返した文字がはみ出す。
+        width: ele => boxSize(ele.data('label')).w,
+        height: ele => boxSize(ele.data('label')).h,
+        padding: '0px',
+        'font-size': 12,
+        'text-outline-width': 0,
+        'text-valign': 'center',
+        'text-halign': 'center',
+        // ラベル側で改行済みなので、cytoscape 側は改行の反映だけさせる
+        'text-wrap': 'wrap',
+        'text-max-width': BOX_MAX_WIDTH,
+        'border-width': 0,
+      },
+    },
+    {
+      selector: 'edge',
+      style: {
+        'width': 1.5,
+        'line-color': '#8a93a8',
+        'target-arrow-color': '#8a93a8',
+        'target-arrow-shape': 'triangle',
+        'curve-style': 'bezier',
+        'opacity': 0.55,
+      },
+    },
+    {
+      selector: 'edge[label = "MATCH"]',
+      style: {
+        'line-color': ele => colors.Me,
+        'target-arrow-color': ele => colors.Me,
+        'line-style': 'dashed',
+        'opacity': 0.7,
+      },
+    },
+  ],
+  layout: { name: 'concentric', animate: false },
+  minZoom: 0.1,
+  maxZoom: 1.6,
+});
+
+const STATUS_TYPE_LABELS = {
+  AGE: '年齢条件',
+  LOCATION: '地域条件',
+  TAG_CATEGORY: '分類',
+  TAG_TARGET: '対象者区分',
+  TAG_CONTENT: '内容区分',
+};
+
+// 詳細パネルは innerHTML で書き換えるため、閉じるボタン(スマホ用)を毎回復元する
+function showDetail(html) {
+  const detail = document.getElementById('detail');
+  detail.classList.add('show');
+  detail.innerHTML = `<button id="detail-close" type="button" aria-label="閉じる">×</button>${html}`;
+  detail.querySelector('#detail-close').addEventListener('click', () => {
+    detail.classList.remove('show');
+  });
+}
+
+cy.on('tap', 'node', evt => {
+  const d = evt.target.data();
+  if (d.type === 'Me') {
+    showDetail(`<h3>自分</h3><p>検索条件に合致した制度が周囲に表示されています。制度ノードをタップすると、その制度だけに絞り込んで条件・必要書類を表示します。</p>`);
+    return;
+  }
+  const typeLabel = d.type === 'Status' ? (STATUS_TYPE_LABELS[d.status_type] || d.status_type) : d.type;
+  // グラフ上は省略表示のため、詳細では省略前の全文を出す
+  showDetail(`<h3>${escapeHtml(d.fullLabel ?? d.label ?? '')}</h3>
+    <p><b>種別:</b> ${typeLabel}</p>
+    ${d.category ? `<p><b>カテゴリ:</b> ${d.category}</p>` : ''}
+    ${d.area_name ? `<p><b>地域:</b> ${d.area_name}</p>` : ''}
+    ${d.summary ? `<p>${d.summary}</p>` : ''}`);
+  if (d.type === 'Benefit') {
+    focusOnBenefit(d.benefit_id);
+  }
+});
+
+document.getElementById('back-button').addEventListener('click', () => {
+  document.getElementById('back-button').style.display = 'none';
+  document.getElementById('detail').classList.remove('show');
+  renderMeCenteredGraph(lastSearchItems);
+});
+
+async function loadCategories() {
+  const res = await fetch('/api/categories');
+  const cats = await res.json();
+  const container = document.getElementById('categories');
+  cats.slice(0, 20).forEach(c => {
+    const btn = document.createElement('button');
+    btn.className = 'chip';
+    btn.textContent = `${c.category} (${c.count})`;
+    btn.onclick = () => {
+      document.querySelectorAll('.chip').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      searchBenefits({ category: c.category });
+    };
+    container.appendChild(btn);
+  });
+}
+
+const filterState = { q: '', category: '', area_code: '', age_months: null };
+
+async function loadAreas() {
+  const res = await fetch('/api/areas');
+  const areas = await res.json();
+  const select = document.getElementById('area-select');
+  areas.forEach(a => {
+    const opt = document.createElement('option');
+    opt.value = a.area_code;
+    opt.textContent = `${a.area_name} (${a.count})`;
+    select.appendChild(opt);
+  });
+}
+
+async function searchBenefits(overrides = {}) {
+  Object.assign(filterState, overrides);
+  const { q, category, area_code, age_months } = filterState;
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (category) params.set('category', category);
+  if (area_code) params.set('area_code', area_code);
+  if (age_months !== null && age_months !== undefined && !Number.isNaN(age_months)) {
+    params.set('age_months', String(age_months));
+  }
+  params.set('limit', '40');
+  const res = await fetch('/api/benefits?' + params.toString());
+  const items = await res.json();
+  const container = document.getElementById('results');
+  container.innerHTML = '';
+  if (items.length === 0) {
+    container.innerHTML = '<p class="sub">該当する制度が見つかりませんでした</p>';
+    cy.elements().remove();
+    return;
+  }
+  items.forEach(item => {
+    const btn = document.createElement('button');
+    btn.className = 'result-item';
+    // 年齢の確度をユーザーに伝える。推定・不明のものを断定的に見せない。
+    let ageLabel;
+    if (item.min_age_months != null || item.max_age_months != null) {
+      ageLabel = `${item.min_age_months ?? '-'}〜${item.max_age_months ?? '-'}ヶ月`;
+      if (item.age_source === 'inferred') ageLabel += '（推定）';
+    } else {
+      ageLabel = item.age_source === 'unknown' ? '年齢条件の記載なし' : '年齢制限なし';
+    }
+    const flag = item.has_free_text_conditions ? ' ⚠︎他条件あり' : '';
+    const moneyBadge = item.is_free ? ' 💰無料' : (item.has_amount_info ? ' 💰金額あり' : '');
+    const onlineBadge = item.electronic_submission ? ' 🖥オンライン申請可' : '';
+    btn.innerHTML = `<span class="title">${item.title}</span><span class="cat">${item.category} / ${item.area_name ?? ''} / ${ageLabel}${moneyBadge}${onlineBadge}${flag}</span>`;
+    btn.onclick = () => {
+      document.querySelectorAll('.result-item').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      // スマホでは検索タブからグラフタブへ自動で切り替える
+      showMobilePane('graph');
+      focusOnBenefit(item.benefit_id);
+    };
+    container.appendChild(btn);
+  });
+  lastSearchItems = items;
+  document.getElementById('back-button').style.display = 'none';
+  renderMeCenteredGraph(items);
+}
+
+// 同名の制度が複数の市区町村に存在するため、ノードラベルには地域名を併記して区別する
+function benefitLabel(title, areaName) {
+  return areaName ? `${title}\n(${areaName})` : title;
+}
+
+let lastSearchItems = [];
+
+function renderMeCenteredGraph(items) {
+  document.getElementById('detail').classList.remove('show');
+  cy.elements().remove();
+  cy.add({ data: { id: ME_NODE_ID, label: '自分', type: 'Me' } });
+  items.forEach(item => {
+    const nodeId = `benefit:${item.benefit_id}`;
+    cy.add({
+      data: {
+        id: nodeId,
+        benefit_id: item.benefit_id,
+        label: benefitLabel(item.title, item.area_name),
+        type: 'Benefit',
+        category: item.category,
+        summary: item.summary,
+        area_name: item.area_name,
+      },
+    });
+    cy.add({
+      data: { id: `${ME_NODE_ID}->${nodeId}`, source: ME_NODE_ID, target: nodeId, label: 'MATCH' },
+    });
+  });
+  cy.layout({
+    name: 'concentric',
+    animate: true,
+    animationDuration: 400,
+    concentric: ele => (ele.data('type') === 'Me' ? 2 : 1),
+    levelWidth: () => 1,
+    minNodeSpacing: 40,
+  }).run();
+}
+
+// 制度ノードをクリックしたら、自分＋その制度＋直結する条件・書類ノードだけに絞り込んで表示する
+async function focusOnBenefit(benefitId) {
+  const res = await fetch('/api/subgraph?benefit_id=' + encodeURIComponent(benefitId));
+  if (!res.ok) return;
+  const data = await res.json();
+
+  cy.elements().remove();
+  cy.add({ data: { id: ME_NODE_ID, label: '自分', type: 'Me' } });
+
+  const benefitNode = data.nodes.find(n => n.data.type === 'Benefit');
+  if (benefitNode) {
+    benefitNode.data.label = benefitLabel(benefitNode.data.label, benefitNode.data.area_name);
+  }
+  data.nodes.forEach(n => {
+    if (n.data.type === 'Status' || n.data.type === 'Document') {
+      const icon = n.data.type === 'Status' ? '✅ ' : '📄 ';
+      // 全文は詳細パネルで見せる。グラフ上は箱に収まるよう折り返し＋省略する
+      n.data.fullLabel = n.data.label;
+      n.data.label = wrapLabel(icon + n.data.label);
+    }
+    cy.add(n);
+  });
+  data.edges.forEach(e => cy.add(e));
+  if (benefitNode) {
+    cy.add({
+      data: { id: `${ME_NODE_ID}->${benefitNode.data.id}`, source: ME_NODE_ID, target: benefitNode.data.id, label: 'MATCH' },
+    });
+  }
+
+  // 条件(Status)は左列、書類(Document)は右列に整列させ、自分→制度→各条件/書類という縦の木構造で読みやすくする
+  // 書類説明が長文の制度では数十〜百件超の断片ができることがあるため、表示件数に上限を設けて残りは件数だけ案内する
+  const MAX_VISIBLE_PER_COLUMN = 15;
+  const allStatusIds = data.nodes.filter(n => n.data.type === 'Status').map(n => n.data.id);
+  const allDocIds = data.nodes.filter(n => n.data.type === 'Document').map(n => n.data.id);
+  const statusIds = allStatusIds.slice(0, MAX_VISIBLE_PER_COLUMN);
+  const docIds = allDocIds.slice(0, MAX_VISIBLE_PER_COLUMN);
+  const hiddenStatusCount = allStatusIds.length - statusIds.length;
+  const hiddenDocCount = allDocIds.length - docIds.length;
+  cy.remove(cy.nodes().filter(n => allStatusIds.slice(MAX_VISIBLE_PER_COLUMN).includes(n.id()) || allDocIds.slice(MAX_VISIBLE_PER_COLUMN).includes(n.id())));
+
+  const ROW_GAP = 14;
+  // 画面が狭いと2列が横にはみ出すため、スマホでは列間を詰める
+  const COLUMN_GAP = isMobile() ? 250 : 300;
+  const positions = {
+    [ME_NODE_ID]: { x: 0, y: 0 },
+  };
+  if (benefitNode) positions[benefitNode.data.id] = { x: 0, y: 120 };
+
+  // ノードの高さがラベル行数で変わるため、実際の高さを積み上げて配置する（等間隔だと重なる）
+  const stack = (ids, x) => {
+    let y = 260;
+    ids.forEach(id => {
+      const node = cy.getElementById(id);
+      const h = node.nonempty() ? boxSize(node.data('label')).h : 34;
+      positions[id] = { x, y: y + h / 2 };
+      y += h + ROW_GAP;
+    });
+  };
+  stack(statusIds, -COLUMN_GAP / 2);
+  stack(docIds, COLUMN_GAP / 2);
+
+  const layout = cy.layout({
+    name: 'preset',
+    // preset の positions 関数には要素(ele)が渡ってくるため ele.id() で引く（idの文字列そのものではない点に注意）
+    positions: ele => positions[ele.id()] || { x: 0, y: 260 },
+    animate: true,
+    animationDuration: 400,
+    fit: false, // アニメーション途中の座標で fit すると見切れるため、完了後に自前で行う
+  });
+  // レイアウト完了後に fit する。run() 直後だとまだ座標が動いていて中途半端に収まる。
+  layout.one('layoutstop', () => {
+    cy.fit(undefined, isMobile() ? 24 : 60);
+    if (isMobile()) {
+      // 下部の詳細シートに隠れないよう少し上に寄せる
+      cy.panBy({ x: 0, y: -cy.height() * 0.14 });
+    }
+  });
+  layout.run();
+  document.getElementById('back-button').style.display = lastSearchItems.length ? 'block' : 'none';
+
+  if (benefitNode) {
+    const d = benefitNode.data;
+    showDetail(`<h3>${d.label.replace('\n', ' ')}</h3>
+      ${d.category ? `<p><b>カテゴリ:</b> ${d.category}</p>` : ''}
+      ${d.area_name ? `<p><b>地域:</b> ${d.area_name}</p>` : ''}
+      ${d.summary ? `<p>${d.summary}</p>` : ''}
+      ${moneySectionHtml(d)}
+      ${procedureSectionHtml(d)}
+      ${contactSectionHtml(d)}
+      ${hiddenStatusCount > 0 ? `<p class="sub">条件はほかに${hiddenStatusCount}件あります</p>` : ''}
+      ${hiddenDocCount > 0 ? `<p class="sub">書類はほかに${hiddenDocCount}件あります</p>` : ''}
+      ${d.update_date ? `<p class="sub">最終更新: ${d.update_date}</p>` : ''}
+      <button id="ai-explain" data-id="${d.benefit_id}" type="button"
+        style="margin-top:10px; width:100%; padding:10px; border-radius:8px; border:1px solid var(--accent); background:transparent; color:var(--accent); cursor:pointer; font-size:12px; font-weight:600;">
+        ✨ AIにやさしく解説してもらう
+      </button>
+      <div id="ai-result"></div>`);
+    document.getElementById('ai-explain')?.addEventListener('click', evt => {
+      requestAiExplanation(evt.currentTarget.dataset.id, evt.currentTarget);
+    });
+  }
+}
+
+// 補助額・費用は制度ごとに書式が大きく異なるため数値化はせず、原文をそのまま表示する
+function moneySectionHtml(d) {
+  const rows = [
+    ['助成額・支給額', d.monetary_support_text],
+    ['現物給付', d.materially_support_text],
+    ['費用', d.cost_text],
+    ['費用の条件', d.cost_conditions_text],
+  ].filter(([, v]) => v);
+  if (rows.length === 0) return '';
+  const body = rows
+    .map(([label, v]) => `<p><b>${label}:</b></p><p style="white-space:pre-line; margin-top:-6px;">${v}</p>`)
+    .join('');
+  return sectionBox(`💰 費用・助成額${d.is_free ? '（無料）' : ''}`, body);
+}
+
+// Gemini による「やさしい解説」。制度の適用判定には関与せず、表現の言い換えのみを担う。
+async function requestAiExplanation(benefitId, button) {
+  const out = document.getElementById('ai-result');
+  if (!out) return;
+  button.disabled = true;
+  button.textContent = '✨ 生成中…';
+  out.innerHTML = '';
+  try {
+    const res = await fetch('/api/support/draft-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ benefit_id: benefitId, mode: 'explain' }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    out.innerHTML = sectionBox(
+      '✨ AIによるやさしい解説',
+      `<p style="white-space:pre-line;">${escapeHtml(data.result)}</p>
+       <p class="sub" style="margin-top:8px;">${data.disclaimer}</p>`
+    );
+    button.style.display = 'none';
+  } catch (err) {
+    out.innerHTML = `<p class="sub">解説の生成に失敗しました。時間をおいてお試しください。</p>`;
+    button.disabled = false;
+    button.textContent = '✨ AIにやさしく解説してもらう';
+  }
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text ?? '';
+  return div.innerHTML;
+}
+
+function sectionBox(heading, bodyHtml) {
+  return `<div style="margin:10px 0; padding:10px; border-radius:8px; background:color-mix(in srgb, var(--accent) 12%, transparent); border:1px solid var(--border);">
+    <p style="margin:0 0 4px; font-weight:600;">${heading}</p>
+    ${bodyHtml}
+  </div>`;
+}
+
+function textRows(rows) {
+  return rows
+    .filter(([, v]) => v)
+    .map(([label, v]) => `<p><b>${label}:</b></p><p style="white-space:pre-line; margin-top:-6px;">${v}</p>`)
+    .join('');
+}
+
+// 申請方法・窓口・根拠法令などの手続き情報
+function procedureSectionHtml(d) {
+  const body = textRows([
+    ['申請方法', d.procedure_method],
+    ['申請窓口', d.procedure_counter],
+    ['根拠法令', d.regulation_name],
+  ]);
+  const online = d.electronic_submission ? `<p>🖥 <b>オンライン申請できます</b></p>` : '';
+  if (!body && !online) return '';
+  return sectionBox('📝 手続き', `${online}${body}`);
+}
+
+// 問い合わせ先と自治体公式ページ
+function contactSectionHtml(d) {
+  const phone = d.contact_phone
+    ? `<p><b>電話:</b> <a href="tel:${d.contact_phone.replace(/[^0-9+]/g, '')}" style="color:var(--accent);">${d.contact_phone}</a></p>`
+    : '';
+  const email = d.contact_email
+    ? `<p><b>メール:</b> <a href="mailto:${d.contact_email}" style="color:var(--accent);">${d.contact_email}</a></p>`
+    : '';
+  const body = textRows([
+    ['担当部署', d.department || d.contact_name],
+    ['所在地', d.contact_address],
+  ]);
+  const official = d.official_url
+    ? `<p><a href="${d.official_url}" target="_blank" rel="noopener" style="color:var(--accent);">🔗 ${d.official_title || '自治体の公式ページを開く'}</a></p>`
+    : '';
+  if (!body && !phone && !email && !official) return '';
+  return sectionBox('📞 問い合わせ・公式情報', `${body}${phone}${email}${official}`);
+}
+
+let debounceTimer;
+document.getElementById('search').addEventListener('input', e => {
+  clearTimeout(debounceTimer);
+  const q = e.target.value.trim();
+  debounceTimer = setTimeout(() => {
+    document.querySelectorAll('.chip').forEach(b => b.classList.remove('active'));
+    searchBenefits({ q });
+  }, 300);
+});
+
+document.getElementById('area-select').addEventListener('change', e => {
+  searchBenefits({ area_code: e.target.value || '' });
+});
+
+function readAgeMonths() {
+  const y = document.getElementById('age-years').value;
+  const m = document.getElementById('age-months').value;
+  if (y === '' && m === '') return null;
+  return (y === '' ? 0 : parseInt(y, 10)) * 12 + (m === '' ? 0 : parseInt(m, 10));
+}
+
+['age-years', 'age-months'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => searchBenefits({ age_months: readAgeMonths() }), 300);
+  });
+});
+
+// ===== グラフ / タイムライン のビュー切り替え =====
+let currentView = 'graph';
+
+function showView(view) {
+  currentView = view;
+  const isTimeline = view === 'timeline';
+  document.getElementById('cy').style.display = isTimeline ? 'none' : 'block';
+  document.getElementById('timeline').classList.toggle('show', isTimeline);
+  document.getElementById('view-graph').classList.toggle('active', !isTimeline);
+  document.getElementById('view-timeline').classList.toggle('active', isTimeline);
+  document.getElementById('legend').style.display = isTimeline ? 'none' : 'flex';
+  if (isTimeline) {
+    loadTimeline();
+  } else {
+    requestAnimationFrame(() => { cy.resize(); cy.fit(undefined, 40); });
+  }
+}
+
+async function loadTimeline() {
+  const container = document.getElementById('timeline');
+  container.innerHTML = '<p class="sub">読み込み中…</p>';
+  const params = new URLSearchParams({ per_stage: '8' });
+  if (filterState.area_code) params.set('area_code', filterState.area_code);
+  const res = await fetch('/api/timeline?' + params.toString());
+  const data = await res.json();
+
+  container.innerHTML = `<h3 style="margin:0 0 4px; font-size:15px;">子育てタイムライン</h3>
+    <p class="sub" style="margin-bottom:16px;">${filterState.area_code ? '選択中の地域' : '東京都全域'}で、成長段階ごとに使える制度です</p>`;
+
+  data.stages.forEach(stage => {
+    const el = document.createElement('div');
+    el.className = 'stage';
+    const cards = stage.benefits.length
+      ? stage.benefits
+          .map(b => {
+            const free = b.is_free ? ' 💰無料' : '';
+            const online = b.electronic_submission ? ' 🖥オンライン可' : '';
+            const est = b.age_source === 'inferred' ? ' ※対象年齢は推定' : '';
+            return `<button class="stage-card" data-id="${b.benefit_id}">
+              <span class="t">${b.title}</span>
+              <span class="m">${b.category} / ${b.area_name ?? ''}${free}${online}${est}</span>
+            </button>`;
+          })
+          .join('')
+      : '<p class="stage-empty">この時期の制度は見つかりませんでした</p>';
+    el.innerHTML = `<h4>${stage.label}</h4><div class="stage-items">${cards}</div>`;
+    container.appendChild(el);
+  });
+
+  // カードから該当制度のグラフへ飛べるようにする
+  container.querySelectorAll('.stage-card').forEach(card => {
+    card.addEventListener('click', () => {
+      showView('graph');
+      focusOnBenefit(card.dataset.id);
+    });
+  });
+}
+
+document.getElementById('view-graph').addEventListener('click', () => showView('graph'));
+document.getElementById('view-timeline').addEventListener('click', () => showView('timeline'));
+
+// ===== スマホ: 「検索」「グラフ」タブ切り替え =====
+function showMobilePane(pane) {
+  if (!isMobile()) return;
+  const sidebar = document.getElementById('sidebar');
+  const wrap = document.getElementById('wrap');
+  const tabSearch = document.getElementById('tab-search');
+  const tabGraph = document.getElementById('tab-graph');
+
+  const showGraph = pane === 'graph';
+  sidebar.classList.toggle('mobile-hidden', showGraph);
+  wrap.classList.toggle('mobile-hidden', !showGraph);
+  tabSearch.classList.toggle('active', !showGraph);
+  tabGraph.classList.toggle('active', showGraph);
+
+  if (showGraph) {
+    // 非表示中はコンテナサイズが0のためレイアウトが崩れる。表示に切り替えてから再計算する
+    requestAnimationFrame(() => {
+      cy.resize();
+      cy.fit(undefined, 40);
+    });
+  }
+}
+
+document.getElementById('tab-search').addEventListener('click', () => showMobilePane('search'));
+document.getElementById('tab-graph').addEventListener('click', () => showMobilePane('graph'));
+
+document.getElementById('detail-close').addEventListener('click', () => {
+  document.getElementById('detail').classList.remove('show');
+});
+
+// 画面回転・リサイズでレイアウトが崩れないように
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (!isMobile()) {
+      document.getElementById('sidebar').classList.remove('mobile-hidden');
+      document.getElementById('wrap').classList.remove('mobile-hidden');
+    }
+    cy.resize();
+    cy.fit(undefined, 40);
+  }, 200);
+});
+
+// 初期表示はスマホでは検索タブ
+if (isMobile()) showMobilePane('search');
+
+loadCategories();
+loadAreas();
+searchBenefits({});
+</script>
+</body>
+</html>
