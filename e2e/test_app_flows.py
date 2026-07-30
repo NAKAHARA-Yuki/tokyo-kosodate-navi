@@ -143,17 +143,24 @@ class TestTimeline:
 
 
 class TestAiSupport:
+    # 実際の Gemini は thinking_level=HIGH で 9〜13 秒かかる（staging 実測）。
+    # Playwright の expect() は page.set_default_timeout の影響を受けず既定 5 秒で判定するため、
+    # AI の待ち時間だけ明示的に伸ばす。全体を伸ばすと他の箇所の遅延を見逃すのでここだけにする。
+    AI_TIMEOUT_MS = 45_000
+
     def test_explain_button_renders_result(self, app_page):
         app_page.locator(".result-item").first.click()
         app_page.click("#ai-explain")
-        expect(app_page.locator("#ai-result")).to_contain_text("AIによるやさしい解説")
+        expect(app_page.locator("#ai-result")).to_contain_text(
+            "AIによるやさしい解説", timeout=self.AI_TIMEOUT_MS
+        )
 
     def test_disclaimer_is_shown(self, app_page):
         """AI 生成である旨の注記を必ず出す。"""
         app_page.locator(".result-item").first.click()
         app_page.click("#ai-explain")
-        expect(app_page.locator("#ai-result")).to_contain_text("AI")
-        expect(app_page.locator("#ai-result")).to_contain_text("公式情報")
+        expect(app_page.locator("#ai-result")).to_contain_text("AI", timeout=self.AI_TIMEOUT_MS)
+        expect(app_page.locator("#ai-result")).to_contain_text("公式情報", timeout=self.AI_TIMEOUT_MS)
 
 
 class TestMobileLayout:
