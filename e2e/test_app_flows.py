@@ -55,19 +55,33 @@ class TestBenefitFocus:
     def test_click_narrows_to_single_benefit(self, app_page):
         """制度をクリックすると、その制度と直結ノードだけに絞り込まれる。"""
         app_page.locator(".result-item").first.click()
-        app_page.wait_for_function("() => cy.nodes().filter(n => n.data('type')==='Status').length > 0")
+        app_page.wait_for_function("() => cy.nodes().filter(n => n.data('type')==='Benefit').length === 1")
 
         types = app_page.evaluate("cy.nodes().map(n => n.data('type'))")
         assert types.count("Benefit") == 1, "フォーカス時は制度1件だけになるはず"
-        assert "Status" in types
-        assert "Document" in types
+        assert "Me" in types, "自分ノードは残る"
+        # 書類を持たない制度は実データに普通に存在するため、種別ごとの件数では判定しない。
+        # 「自分と制度のほかは条件か書類しか出ない」という構造だけを担保する。
+        assert set(types) <= {"Me", "Benefit", "Status", "Document"}
+        assert any(t in ("Status", "Document") for t in types), "制度に紐づくノードが1つも出ないのはおかしい"
 
-    def test_detail_panel_shows_contact_and_procedure(self, app_page):
+    def test_detail_panel_shows_benefit_sections(self, app_page):
+        """詳細パネルが制度名と、データのある節を表示する。
+
+        「手続き」「問い合わせ」などの節は、元データに該当項目が無ければ描画されない。
+        実データでは欠けている制度が普通にあるため、特定の節の存在は前提にしない。
+        """
         app_page.locator(".result-item").first.click()
         detail = app_page.locator("#detail")
         expect(detail).to_be_visible()
-        expect(detail).to_contain_text("手続き")
-        expect(detail).to_contain_text("問い合わせ")
+
+        # 制度名は必ず出る
+        assert detail.locator("h3").inner_text().strip(), "制度名が空になっている"
+        # 節は最低1つ出る（費用・手続き・問い合わせのいずれか）
+        headings = detail.inner_text()
+        assert any(k in headings for k in ("費用", "手続き", "問い合わせ")), (
+            f"節が1つも描画されていない: {headings[:200]}"
+        )
 
     def test_labels_fit_inside_nodes(self, app_page):
         """ラベルがノードからはみ出していないこと（実際に起きた不具合の回帰防止）。
@@ -76,7 +90,10 @@ class TestBenefitFocus:
         日本語ラベルは自前で改行しないと箱をはみ出す。
         """
         app_page.locator(".result-item").first.click()
-        app_page.wait_for_function("() => cy.nodes().filter(n => n.data('type')==='Document').length > 0")
+        # 書類を持たない制度もあるので、条件か書類のどちらかが出るのを待つ
+        app_page.wait_for_function(
+            "() => cy.nodes().filter(n => ['Status','Document'].includes(n.data('type'))).length > 0"
+        )
 
         overflowing = app_page.evaluate("""
             () => cy.nodes()
