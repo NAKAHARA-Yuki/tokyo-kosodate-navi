@@ -20,6 +20,14 @@ endif
 export APP_ENV       := $(ENV)
 export GCP_PROJECT_ID := $(PROJECT_ID)
 
+# 権限を絞った認証情報があればそれを使う（詳細は docs/adr/0008）。
+# claude-dev は dev だけ書き込み可・staging/prod は読み取りのみのサービスアカウント。
+# 存在しない環境（CI や他のメンバー）では既定の認証のままになる。
+SCOPED_ADC := $(HOME)/.config/gcloud/claude-dev-adc.json
+ifneq ($(wildcard $(SCOPED_ADC)),)
+  export GOOGLE_APPLICATION_CREDENTIALS := $(SCOPED_ADC)
+endif
+
 .PHONY: help
 help: ## コマンド一覧を表示
 	@echo "使い方: make <target> [ENV=dev|staging|prod]   (現在: ENV=$(ENV))"
@@ -96,10 +104,18 @@ url: ## デプロイ済みサービスのURLを表示する
 	@gcloud run services describe $(SERVICE) --project $(PROJECT_ID) --region $(REGION) --format='value(status.url)'
 
 .PHONY: deploy
-deploy: ## Cloud Run にデプロイする (例: make deploy ENV=staging)
-	@if [ "$(ENV)" = "prod" ]; then \
-		echo "⚠ 本番環境へのデプロイです"; \
-		read -p "続行しますか? [y/N] " ans && [ "$$ans" = "y" ] || exit 1; \
+deploy: ## Cloud Run の dev にデプロイする (staging/prod は GitHub Actions 経由)
+	@# staging と prod は手元からデプロイしない。誰がいつ何を出したか追えなくなり、
+	@# CI を通っていないコードが本番に出る経路にもなるため（docs/adr/0008）。
+	@if [ "$(ENV)" != "dev" ]; then \
+		echo "❌ $(ENV) へは手元からデプロイできません。"; \
+		echo ""; \
+		echo "   staging: main へマージすると自動でデプロイされます"; \
+		echo "   prod   : v*.*.* タグを push してください"; \
+		echo "            git tag -a v1.2.3 -m '説明' && git push origin v1.2.3"; \
+		echo ""; \
+		echo "   詳細: CONTRIBUTING.md「リリース手順」"; \
+		exit 1; \
 	fi
 	gcloud run deploy $(SERVICE) \
 		--source ./app \
