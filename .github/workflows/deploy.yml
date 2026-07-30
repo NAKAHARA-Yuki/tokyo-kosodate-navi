@@ -70,7 +70,7 @@ jobs:
 
       - name: 環境が staging を指しているか確認
         run: |
-          ENV=$(curl -fsS "${{ steps.deploy.outputs.url }}/healthz" | python3 -c 'import json,sys; print(json.load(sys.stdin)["env"])')
+          ENV=$(curl -fsS "${{ steps.deploy.outputs.url }}/api/healthz" | python3 -c 'import json,sys; print(json.load(sys.stdin)["env"])')
           echo "デプロイ先の APP_ENV: $ENV"
           [ "$ENV" = "staging" ] || { echo "❌ staging 以外を指しています"; exit 1; }
 
@@ -159,7 +159,7 @@ jobs:
 
       - name: 本番のスモークテスト
         run: |
-          BODY=$(curl -fsS "${{ steps.deploy.outputs.url }}/healthz")
+          BODY=$(curl -fsS "${{ steps.deploy.outputs.url }}/api/healthz")
           echo "$BODY"
           ENV=$(echo "$BODY" | python3 -c 'import json,sys; print(json.load(sys.stdin)["env"])')
           [ "$ENV" = "prod" ] || { echo "❌ prod 以外を指しています"; exit 1; }

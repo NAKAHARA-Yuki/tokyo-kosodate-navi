@@ -32,7 +32,7 @@ def benefit_row(**overrides):
 
 class TestHealth:
     def test_healthz(self, client):
-        res = client.get("/healthz")
+        res = client.get("/api/healthz")
         assert res.status_code == 200
         body = res.json()
         assert body["status"] == "ok"
@@ -46,7 +46,7 @@ class TestHealth:
 
 
 def res_dataset(client) -> str:
-    return client.get("/healthz").json()["dataset"]
+    return client.get("/api/healthz").json()["dataset"]
 
 
 class TestSearchBenefits:

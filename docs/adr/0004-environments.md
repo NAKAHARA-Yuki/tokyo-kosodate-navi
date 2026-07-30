@@ -79,7 +79,7 @@ E2E をスタブと実データの2段構えにしているのは、
 
 ## 環境の見分け方
 
-`/healthz` が現在の環境とデータセットを返す。デプロイ事故の切り分けに使う。
+`/api/healthz` が現在の環境とデータセットを返す。デプロイ事故の切り分けに使う。
 
 ```json
 {"status": "ok", "env": "staging", "dataset": "gov_knowledge_db_staging"}

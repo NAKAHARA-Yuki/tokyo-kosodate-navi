@@ -631,7 +631,10 @@ def draft_review(req: DraftReviewRequest):
     }
 
 
-@app.get("/healthz")
+# パスが `/api/` 配下なのは意図的。`/healthz` は Google Frontend が手前で横取りし、
+# コンテナまでリクエストが届かない（Cloud Run のログにも一切残らず、Google の 404 HTML が返る）。
+# デプロイ後の確認が常に失敗して気づいた。
+@app.get("/api/healthz")
 def healthz():
     # どの環境・どのデータセットを見ているかは、デプロイ事故の切り分けで必ず要る
     return {"status": "ok", "env": APP_ENV, "dataset": DATASET_ID}

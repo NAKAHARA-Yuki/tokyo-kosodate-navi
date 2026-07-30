@@ -29,7 +29,7 @@ def _wait_until_ready(url: str, timeout: float = 40.0) -> None:
     last_error: Exception | None = None
     while time.time() < deadline:
         try:
-            with urllib.request.urlopen(f"{url}/healthz", timeout=2) as res:
+            with urllib.request.urlopen(f"{url}/api/healthz", timeout=2) as res:
                 if res.status == 200:
                     return
         except Exception as exc:  # noqa: BLE001  起動待ちの間は例外が出て当然

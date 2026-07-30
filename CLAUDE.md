@@ -56,7 +56,7 @@ GCP プロジェクトは1つのまま、**BigQuery データセットと Cloud 
 | staging | `gov_knowledge_db_staging` | main マージで自動デプロイ。本番前ゲート |
 | prod | `gov_knowledge_db` | 公開環境 |
 
-`/healthz` が `{"env": ..., "dataset": ...}` を返すので、どこを見ているかは常に確認できる。
+`/api/healthz` が `{"env": ..., "dataset": ...}` を返すので、どこを見ているかは常に確認できる。
 
 ## よく使うコマンド
 
@@ -110,6 +110,9 @@ make deploy ENV=staging   # Cloud Run へデプロイ
   `extract_links()` で全テキスト列から分離済み。新しいテキスト列を追加するときも通すこと。
 - **必要書類欄を読点「、」で分割してはいけない。** 一文が途中で切れて意味不明な書類ノードになる。
 - **Gemini は `thinking_level` と `thinking_budget` を併用できない**（400 になる）。
+- **Cloud Run で `/healthz` は使えない。** Google Frontend が手前で横取りするため
+  コンテナまでリクエストが届かず、Google の 404 HTML が返る（Cloud Run のログにも残らない）。
+  FastAPI に登録されていても無関係。ヘルスチェックは `/api/healthz` に置いている。
 
 ## コードを書くときの約束
 

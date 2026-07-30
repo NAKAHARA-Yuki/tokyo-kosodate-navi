@@ -186,7 +186,7 @@ class TestSmoke:
     """
 
     def test_health(self, page, base_url):
-        res = page.request.get(f"{base_url}/healthz")
+        res = page.request.get(f"{base_url}/api/healthz")
         assert res.ok
         body = res.json()
         assert body["status"] == "ok"
