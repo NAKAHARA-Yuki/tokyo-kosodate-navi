@@ -181,6 +181,33 @@ make fmt && make lint
 
 スキーマを変えた場合は `make graph` の再実行が必須です（PROPERTY GRAPH は列を参照しているため）。
 
+## 依存関係を変更するとき
+
+本番イメージに入るものだけロックしています。開発側（`requirements-dev.txt`）は緩いままです。
+
+| ファイル | 役割 |
+|---|---|
+| `app/requirements.in` | **人が編集する。** 本番アプリの直接依存だけを書く |
+| `app/requirements.lock` | 自動生成。推移依存まで含めてハッシュ付きで固定。**手で編集しない** |
+| `requirements.txt` / `requirements-dev.txt` | ETL・開発・CI 用。緩い指定のまま |
+
+`app/requirements.in` を変えたら**必ず**ロックを再生成してください。
+
+```bash
+make lock          # docker で python:3.12-slim を使って再生成
+git diff app/requirements.lock   # 意図しない巻き添え更新が無いか確認
+```
+
+Dockerfile は `--require-hashes` 付きで入れるため、ロックを更新し忘れるとビルドが失敗します
+（気づかないまま別物が本番に出るよりは良い、という判断です）。
+
+**なぜロックするか**: 緩い指定のままだと、ビルドした日によって中身が変わります。
+実際に prod と staging で `google-genai` のバージョンがずれ、staging だけ Gemini 呼び出しが
+503 になる事故が起きました。同じコードなのに環境によって壊れるため、原因の特定に時間がかかります。
+
+**なぜ docker 経由か**: ロックは解決した Python バージョンに紐づきます。
+ローカル（3.14）で作ると本番（3.12）で入らないロックができます。
+
 ## セキュリティ
 
 - サービスアカウントキーや認証情報を**絶対にコミットしない**（`.gitignore` 済みだが目視でも確認）

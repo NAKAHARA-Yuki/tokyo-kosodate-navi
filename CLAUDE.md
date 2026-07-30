@@ -113,6 +113,11 @@ make deploy ENV=staging   # Cloud Run へデプロイ
 - **Cloud Run で `/healthz` は使えない。** Google Frontend が手前で横取りするため
   コンテナまでリクエストが届かず、Google の 404 HTML が返る（Cloud Run のログにも残らない）。
   FastAPI に登録されていても無関係。ヘルスチェックは `/api/healthz` に置いている。
+- **本番イメージの依存は `app/requirements.lock` からしか入れない。** `app/requirements.in` を
+  変えたら `make lock` を実行してロックを再生成すること。緩い指定のままビルドすると
+  ビルドした日によって中身が変わり、prod と staging が別物になる
+  （google-genai が 2.14→2.16 に上がって Gemini 呼び出しが 503 になった実績あり）。
+  ロックは本番と同じ `python:3.12-slim` の中で生成する。ローカル（3.14）で作ると本番で入らない。
 
 ## コードを書くときの約束
 
