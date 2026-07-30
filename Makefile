@@ -39,8 +39,24 @@ setup: ## 仮想環境と依存関係を用意する
 	$(PY) -m ensurepip --upgrade
 	$(PIP) install -q --upgrade pip
 	$(PIP) install -q -r requirements-dev.txt
-	$(VENV)/bin/playwright install --with-deps chromium
+	@# --with-deps は OS パッケージを入れるため sudo が要る。CI では通るが手元では
+	@# パスワード入力できずに失敗することがある。ブラウザ本体さえ入れば E2E は動くので、
+	@# 失敗しても setup 全体は止めず、必要なときの対処だけ案内する。
+	$(VENV)/bin/playwright install --with-deps chromium \
+		|| ($(VENV)/bin/playwright install chromium \
+		    && echo "⚠️  OS依存パッケージの導入をスキップしました（sudo が必要）。" \
+		    && echo "    E2E がブラウザ起動で失敗する場合は手動で実行してください:" \
+		    && echo "    sudo $(VENV)/bin/playwright install-deps chromium")
 	@echo "✅ setup 完了。GCP未認証なら: gcloud auth application-default login"
+
+.PHONY: lock
+lock: ## 本番イメージの依存を再固定する (app/requirements.in を変えたら必ず実行)
+	@# 本番と同じ python:3.12-slim の中で解決する。ローカルの Python で作ると
+	@# バージョンが違うぶん本番で入らないロックができる（ローカルは 3.14）。
+	docker run --rm -v "$(PWD)/app:/w" -w /w python:3.12-slim sh -c '\
+		pip install -q pip-tools && \
+		pip-compile --quiet --generate-hashes --output-file requirements.lock requirements.in'
+	@echo "✅ app/requirements.lock を更新しました。差分を確認してコミットしてください"
 
 # ---------------------------------------------------------------- 品質
 

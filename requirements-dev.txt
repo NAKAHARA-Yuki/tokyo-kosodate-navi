@@ -1,6 +1,6 @@
 # 開発・CI 用（本番イメージには入れない）
 -r requirements.txt
--r app/requirements.txt
+-r app/requirements.in    # 開発側は緩いままにする。固定するのは本番イメージだけ（app/requirements.lock）
 
 pytest>=8.0.0
 httpx>=0.27.0          # FastAPI TestClient が使う
