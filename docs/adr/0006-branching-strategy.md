@@ -66,8 +66,19 @@ Cloud Run のラベルに `release` と `commit` を入れ、GCP 側からも追
 - リリースの単位が明示的になり、変更履歴（タグ）がそのままリリースノートの土台になる
 - タグを打つという明示的な操作が挟まるため、誤って本番へ出る事故が起きにくい
 
-### 必要な GitHub 側の設定
+### 必要な GitHub 側の設定（設定済み）
 
-- リポジトリ設定で **Squash merge のみ有効**にする
-- `main` にブランチ保護（直 push 禁止 / CI 必須 / approve 1名以上）
-- Environments に `staging` と `production` を作り、`production` に承認者を設定
+- リポジトリ設定で **Squash merge のみ有効**
+- `main` の ruleset で 直 push 禁止 / squash のみ / CI 必須 / force push・削除の禁止
+  - approve の必須数は **0**。GitHub は自己承認を許可せず、ひとり体制だと
+    1 以上にすると自分の PR をマージできなくなるため。メンバーが増えたら 1 に戻す
+- Environments
+  - `staging`: `main` ブランチからのみデプロイ可。承認なし
+  - `production`: **`v*.*.*` タグからのみ**デプロイ可 + 承認者必須
+
+`production` を「タグからのみ」に制限したことで、本番リリースがタグ経由であることが
+ワークフローの `if` 条件だけでなく GitHub 側でも担保される。
+
+なお ruleset は Free プランの private リポジトリでは強制されないため、
+このリポジトリは public にしている（元データが東京都のオープンデータであり、
+コードにも認証情報を含まないため公開して支障がない）。
