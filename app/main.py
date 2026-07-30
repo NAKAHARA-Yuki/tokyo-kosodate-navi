@@ -610,7 +610,14 @@ def draft_review(req: DraftReviewRequest):
     try:
         from google.genai import types
 
-        response = _build_genai_client().models.generate_content(
+        # Client は必ず変数で受けること。`_build_genai_client().models.generate_content(...)` と
+        # 繋げると、`.models` を取り出した時点で Client の参照が消えて GC され、
+        # その終了処理が内部の httpx 接続を閉じてしまう。Models は Client ではなく
+        # 内部の api_client しか保持しないため、閉じられた接続で送信しようとして
+        # "Cannot send a request, as the client has been closed" になる。
+        # google-genai 2.16 で顕在化した（それ以前のバージョンでは動いていた）。
+        client = _build_genai_client()
+        response = client.models.generate_content(
             model=GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
