@@ -67,6 +67,10 @@ GCP プロジェクトは1つのまま、BigQuery データセットと Cloud Ru
 
 `/api/healthz` が現在の環境とデータセットを返します。
 
+**手元から書き込めるのは dev だけです。** staging と prod は読み取りのみに絞った
+サービスアカウントで動いています（[ADR 0008](docs/adr/0008-scoped-credentials.md)）。
+staging へ反映するには main へマージ、prod は `v*.*.*` タグを push してください。
+
 ## 開発
 
 ```bash

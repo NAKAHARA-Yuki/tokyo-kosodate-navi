@@ -56,6 +56,11 @@ GCP プロジェクトは1つのまま、**BigQuery データセットと Cloud 
 | staging | `gov_knowledge_db_staging` | main マージで自動デプロイ。本番前ゲート |
 | prod | `gov_knowledge_db` | 公開環境 |
 
+**手元から書き込めるのは dev だけ。** staging と prod は読み取りのみに絞った
+サービスアカウントで動いている（[docs/adr/0008](docs/adr/0008-scoped-credentials.md)）。
+`make etl ENV=prod` や `make graph ENV=staging` は権限エラーで落ちる。これは仕様。
+staging へ反映したいなら main へマージ、prod なら `v*.*.*` タグを push する。
+
 `/api/healthz` が `{"env": ..., "dataset": ...}` を返すので、どこを見ているかは常に確認できる。
 
 ## よく使うコマンド
@@ -71,11 +76,12 @@ make e2e                  # E2E（スタブ版アプリを自動起動。GCP不�
 make check                # lint + test + e2e
 make dev                  # ローカル起動 (http://localhost:8080)
 
-make etl ENV=dev          # BigQuery へデータ投入（対象環境を上書き。確認あり）
+make etl ENV=dev          # BigQuery へデータ投入（dev のみ。staging/prod は権限で落ちる）
 make graph ENV=dev        # PROPERTY GRAPH 再作成
-make verify ENV=dev       # グラフの動作検証
+make verify ENV=dev       # グラフの動作検証（読み取りなので全環境で可）
 make clone-data ENV=dev   # 本番データを dev にコピー（ETLより速い）
-make deploy ENV=staging   # Cloud Run へデプロイ
+make deploy               # Cloud Run の dev へデプロイ（staging/prod は不可）
+make lock                 # 本番イメージの依存を再固定（requirements.in を変えたら必須）
 ```
 
 ## データモデルの要点

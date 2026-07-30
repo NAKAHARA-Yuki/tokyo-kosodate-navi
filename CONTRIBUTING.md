@@ -172,12 +172,19 @@ make fmt && make lint
 
 ## データパイプラインを変更するとき
 
-`make etl` は**本番の BigQuery を上書きします**（`WRITE_TRUNCATE`）。
+`make etl` は**対象環境の BigQuery を上書きします**（`WRITE_TRUNCATE`）。
+
+手元から書き込めるのは **dev だけ**です。staging と prod は読み取りのみに絞った
+サービスアカウントで動いており、`make etl ENV=prod` は権限エラーで落ちます
+（→ [ADR 0008](docs/adr/0008-scoped-credentials.md)）。これは仕様です。
 
 1. まずローカルのキャッシュ JSON で `transform()` の出力を確認する
 2. 件数が想定通りか（`benefits=7812` など）ログで確認
-3. その上で `make etl && make graph && make verify`
+3. その上で `make etl ENV=dev && make graph ENV=dev && make verify ENV=dev`
 4. アプリの表示まで確認してから PR
+
+staging / prod のデータ更新が必要な場合は、権限を持つメンバーが実施します。
+勝手に権限を広げないでください。
 
 スキーマを変えた場合は `make graph` の再実行が必須です（PROPERTY GRAPH は列を参照しているため）。
 
