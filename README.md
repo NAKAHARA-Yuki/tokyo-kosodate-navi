@@ -41,18 +41,37 @@
 
 ## セットアップ
 
-前提: Python 3.12+、`gcloud` 認証済み、GCP プロジェクトへのアクセス権
+### devcontainer（推奨）
+
+VS Code / Cursor で開いて「Reopen in Container」を選ぶだけです。Python・依存関係・
+Playwright のブラウザ・gcloud CLI がすべて入った状態で立ち上がります。
+**`make setup` は不要**で、Python も本番と同じ 3.12 にそろいます。
 
 ```bash
-git clone <このリポジトリ>
-cd 16_OpenDataHackathon
+git clone <このリポジトリ> && cd tokyo-kosodate-navi
+code .                                   # → Reopen in Container
 
+gcloud auth application-default login    # 初回のみ
+make auth                                # GCP アクセスを claude-dev に切り替え
+make check                               # lint + テスト + E2E
+```
+
+`make auth` については[下の「権限」](#権限)を参照してください。
+
+### devcontainer を使わない場合
+
+前提: Python 3.12、`gcloud` 認証済み、GCP プロジェクトへのアクセス権
+
+```bash
 cp .env.example .env      # 必要なら GCP_PROJECT_ID を書き換える
-make setup                # 仮想環境 + 依存関係
-gcloud auth application-default login   # 未認証の場合
-
+make setup                # 仮想環境 + 依存関係 + Playwright
+gcloud auth application-default login
+make auth
 make dev                  # http://localhost:8080
 ```
+
+Python が 3.12 以外だと `make lock` の結果が本番と食い違います（`make lock` 自体は
+docker 経由なので影響を受けませんが、手元の挙動が本番とズレます）。
 
 ## 環境
 
@@ -67,9 +86,32 @@ GCP プロジェクトは1つのまま、BigQuery データセットと Cloud Ru
 
 `/api/healthz` が現在の環境とデータセットを返します。
 
-**手元から書き込めるのは dev だけです。** staging と prod は読み取りのみに絞った
-サービスアカウントで動いています（[ADR 0008](docs/adr/0008-scoped-credentials.md)）。
+### 権限
+
+`make auth` を実行すると、**make 経由の GCP アクセスが `claude-dev` サービスアカウントに
+切り替わります**（[ADR 0008](docs/adr/0008-scoped-credentials.md)）。
+
+| 対象 | 権限 |
+|---|---|
+| dev | 読み書き |
+| staging | 読み取りのみ |
+| prod | 読み取りのみ |
+
+`make etl ENV=prod` のような操作は権限エラーで落ちます。これは仕様です。
 staging へ反映するには main へマージ、prod は `v*.*.*` タグを push してください。
+
+あなた自身の GCP アカウントの権限は変わりません。変わるのはツール経由のアクセスだけで、
+**うっかり本番を壊すのを防ぐための既定値**です。
+
+`make auth` で権限エラーが出たら、管理者に `serviceAccountTokenCreator` の付与を依頼してください。
+
+```bash
+gcloud iam service-accounts add-iam-policy-binding \
+  claude-dev@opendatahackathon-503500.iam.gserviceaccount.com \
+  --project=opendatahackathon-503500 \
+  --member="user:<メンバーのメールアドレス>" \
+  --role=roles/iam.serviceAccountTokenCreator
+```
 
 ## 開発
 
