@@ -65,7 +65,7 @@ GCP プロジェクトは1つのまま、BigQuery データセットと Cloud Ru
 | staging | `gov_knowledge_db_staging` | main マージで自動デプロイ。本番前ゲート |
 | prod | `gov_knowledge_db` | 公開環境 |
 
-`/healthz` が現在の環境とデータセットを返します。
+`/api/healthz` が現在の環境とデータセットを返します。
 
 ## 開発
 
