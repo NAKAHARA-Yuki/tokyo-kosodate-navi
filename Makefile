@@ -1,7 +1,9 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-VENV        := .venv
+# devcontainer では依存がイメージに焼き込み済みなので VENV=/usr/local で上書きする
+# （そちらの bin/ に pytest や ruff が入っている）。素の環境では .venv を作って使う。
+VENV        ?= .venv
 PY          := $(VENV)/bin/python
 PIP         := $(VENV)/bin/pip
 PROJECT_ID  ?= opendatahackathon-503500
@@ -42,7 +44,11 @@ env: ## 現在の環境設定を表示
 # ---------------------------------------------------------------- 環境構築
 
 .PHONY: setup
-setup: ## 仮想環境と依存関係を用意する
+setup: ## 仮想環境と依存関係を用意する（devcontainer では不要）
+	@if [ "$(VENV)" != ".venv" ]; then \
+		echo "✅ devcontainer では依存がイメージに入っているため setup は不要です"; \
+		exit 0; \
+	fi
 	python3 -m venv $(VENV)
 	$(PY) -m ensurepip --upgrade
 	$(PIP) install -q --upgrade pip
@@ -56,6 +62,16 @@ setup: ## 仮想環境と依存関係を用意する
 		    && echo "    E2E がブラウザ起動で失敗する場合は手動で実行してください:" \
 		    && echo "    sudo $(VENV)/bin/playwright install-deps chromium")
 	@echo "✅ setup 完了。GCP未認証なら: gcloud auth application-default login"
+
+.PHONY: auth
+auth: ## Claude Code 経由の GCP アクセスを claude-dev に切り替える（初回に1度）
+	@# 認証だけは個人ごとなのでコンテナに焼き込めない。ここを1コマンドにしている。
+	@if [ ! -f "$(HOME)/.config/gcloud/application_default_credentials.json" ]; then \
+		echo "先に gcloud の認証が要ります:"; \
+		echo "   gcloud auth application-default login"; \
+		exit 1; \
+	fi
+	$(PY) scripts/setup_scoped_adc.py
 
 .PHONY: lock
 lock: ## 本番イメージの依存を再固定する (app/requirements.in を変えたら必ず実行)

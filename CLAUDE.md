@@ -56,10 +56,13 @@ GCP プロジェクトは1つのまま、**BigQuery データセットと Cloud 
 | staging | `gov_knowledge_db_staging` | main マージで自動デプロイ。本番前ゲート |
 | prod | `gov_knowledge_db` | 公開環境 |
 
-**手元から書き込めるのは dev だけ。** staging と prod は読み取りのみに絞った
-サービスアカウントで動いている（[docs/adr/0008](docs/adr/0008-scoped-credentials.md)）。
+**手元から書き込めるのは dev だけ。** `make auth` で GCP アクセスが `claude-dev`
+サービスアカウントに切り替わる（[docs/adr/0008](docs/adr/0008-scoped-credentials.md)）。
 `make etl ENV=prod` や `make graph ENV=staging` は権限エラーで落ちる。これは仕様。
 staging へ反映したいなら main へマージ、prod なら `v*.*.*` タグを push する。
+
+開発環境は devcontainer が正。Python は本番と同じ 3.12 で、依存も Playwright も
+イメージに焼き込み済み（`make setup` 不要、`VENV=/usr/local`）。
 
 `/api/healthz` が `{"env": ..., "dataset": ...}` を返すので、どこを見ているかは常に確認できる。
 
