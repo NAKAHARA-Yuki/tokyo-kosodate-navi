@@ -75,8 +75,8 @@ make auth
 make dev                  # http://localhost:8080
 ```
 
-Python が 3.12 以外だと `make lock` の結果が本番と食い違います（`make lock` 自体は
-docker 経由なので影響を受けませんが、手元の挙動が本番とズレます）。
+Python が 3.12 以外でも `make lock` は docker で 3.12 を用意するので結果は変わりませんが、
+手元のアプリの挙動が本番とズレます。
 
 ## 環境
 
@@ -163,6 +163,8 @@ git tag -a v1.2.0 -m "タイムラインビューを追加" && git push origin v
 |---|---|
 | [CLAUDE.md](CLAUDE.md) | Claude Code 向けの前提・規約・落とし穴 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | ブランチ運用・コミット規約・レビュー基準 |
+| [docs/onboarding.md](docs/onboarding.md) | 開発環境のセットアップ（サーバー常駐・チーム展開） |
+| [docs/tmux.md](docs/tmux.md) | tmux チートシート（初めての人向け） |
 | [docs/architecture.md](docs/architecture.md) | 全体構成と各コンポーネントの責務 |
 | [docs/data-model.md](docs/data-model.md) | BigQuery のテーブル・カラム定義 |
 | [docs/adr/](docs/adr/) | 非自明な設計判断の記録 |

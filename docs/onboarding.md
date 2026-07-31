@@ -88,7 +88,18 @@ make agent-shell                        # コンテナに入る
 claude --dangerously-skip-permissions --remote-control kosodate
 ```
 
-`Ctrl-b d` で tmux から抜けても Claude Code は動き続けます。
+`Ctrl-b` を押して離してから `d` を押すと tmux から抜けられます。
+**抜けても Claude Code は動き続けます。** これが tmux を使う理由です。
+
+> tmux が初めてなら [docs/tmux.md](tmux.md) を見てください。
+> 最低限これだけ覚えれば足ります。
+>
+> ```
+> tmux new -s claude       部屋を作る
+> tmux attach -t claude    部屋に入る
+> Ctrl-b  d                出る（作業は継続）
+> Ctrl-b  [                さかのぼって読む（q で戻る）
+> ```
 
 ```
 ssh server
@@ -157,6 +168,8 @@ make check
 | `make agent-up` で port is already allocated | 他ユーザーと衝突。`.env` に `DEV_PORT=8081` |
 | コンテナ内でファイルを保存できない | uid のずれ。`make agent-down && make agent-up` で作り直す |
 | `docker ps` が権限エラー | `sudo usermod -aG docker $USER` の後、ログインし直す |
+| tmux でキーを打っても反応しない | コピーモードのまま。`q` で抜ける → [tmux.md](tmux.md) |
+| tmux でスクロールできない | 仕様。`Ctrl-b` `[` でコピーモードに入る → [tmux.md](tmux.md) |
 | `make etl ENV=prod` が権限エラー | **仕様**。prod への書き込みは不可。ETL は dev で行う |
 | `make deploy ENV=staging` が止まる | **仕様**。staging は main へのマージで自動デプロイ |
 
