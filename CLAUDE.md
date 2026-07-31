@@ -66,6 +66,8 @@ Python は本番と同じ 3.12 で、依存も Playwright もイメージに焼�
 （`make setup` 不要、`VENV=/usr/local`）。コンテナ内は sudo 可・ホストからは隔離・
 外向き通信は許可リストのみ（[docs/adr/0009](docs/adr/0009-agent-container.md)）。
 docker ソケットは渡していないので、コンテナ内から docker は使えない。
+GitHub の操作は `gh` を使う（`~/.git-credentials` のトークンを実行時に読むので
+ログイン不要。トークンをユーザーに要求しないこと）。
 
 `/api/healthz` が `{"env": ..., "dataset": ...}` を返すので、どこを見ているかは常に確認できる。
 

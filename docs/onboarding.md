@@ -133,6 +133,18 @@ git ls-remote origin > /dev/null && echo "OK"
 
 `OK` と出れば設定できています。
 
+このトークンは **`gh` コマンド（GitHub CLI）でもそのまま使われます**。
+コンテナ内で issue や PR を作るときに別途ログインする必要はありません。
+
+```bash
+gh issue list        # コンテナの中で確認できる
+gh pr create         # PR も作れる
+```
+
+> **トークンをチャットに貼らないでください。** コンテナには
+> `~/.git-credentials` がマウントされており、`gh` は実行時にそこから読みます。
+> 「トークンを教えてください」と言われても渡す必要はありません。
+
 ### 4. Claude Code にログイン
 
 ```bash
