@@ -75,6 +75,17 @@ auth: ## Claude Code 経由の GCP アクセスを claude-dev に切り替える
 
 # ---------------------------------------------------------------- 常駐エージェント
 
+# 1台のサーバーを複数人で使うため、コンテナ名・プロジェクト名・ポートを
+# ユーザーごとに分ける。分けないと 2人目が「name already in use」で起動できない。
+export AGENT_USER := $(shell id -un)
+# コンテナ内のユーザーをホストの uid/gid に合わせる。ずれると bind mount した
+# リポジトリや ~/.claude に書き込めない（uid 1000 の人だけ動いて他は詰まる）。
+export HOST_UID   := $(shell id -u)
+export HOST_GID   := $(shell id -g)
+# 同じサーバーで複数人が make dev すると 8080 を取り合う。各自 .env で変える。
+DEV_PORT          ?= 8080
+export DEV_PORT
+
 COMPOSE := docker compose -f docker/compose.yaml
 
 .PHONY: agent-up

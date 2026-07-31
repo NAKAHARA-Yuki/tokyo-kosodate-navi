@@ -1,18 +1,29 @@
 # サーバー上に常駐させて Claude Code を動かすためのコンテナ。
 #
+# 1台のサーバーを複数人で共有できるよう、プロジェクト名・コンテナ名・ポートを
+# ユーザーごとに分けている。値は Makefile が export する。
+#
 #   make agent-up      起動（サーバー再起動後も自動で上がる）
 #   make agent-shell   入る（tmux はホスト側で回す想定）
 #   make agent-down    止める
 #
 # 使い方の詳細は docs/onboarding.md「サーバーで常駐させる」を参照。
 
+name: kosodate-${AGENT_USER:-shared}
+
 services:
   agent:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    image: kosodate-agent
-    container_name: kosodate-agent
+      args:
+        # ホストの uid/gid に合わせる。合わせないと bind mount したリポジトリや
+        # ~/.claude に書き込めず、uid 1000 の人以外が詰まる。
+        USER_UID: ${HOST_UID:-1000}
+        USER_GID: ${HOST_GID:-1000}
+    # uid が違えば中身も違うのでイメージもユーザーごとに分ける
+    image: kosodate-agent:${AGENT_USER:-shared}
+    container_name: kosodate-agent-${AGENT_USER:-shared}
     restart: unless-stopped
     # Chromium は共有メモリを多く使う。docker の既定 64MB では E2E が
     # ブラウザのクラッシュで大量に落ちる（22件中20件がエラーになった）。
@@ -52,5 +63,10 @@ services:
     # docker ソケットは意図的に渡していない。
     # 渡すとコンテナから特権コンテナを起動でき、ホストの root 相当になって
     # 隔離が意味を失う。make lock はコンテナが本番と同じ 3.12 なのでそのまま動く。
+
+    ports:
+      # make dev で起動したアプリをホストから見るため。
+      # 同じサーバーで複数人が起動すると衝突するので、各自 .env で DEV_PORT を変える。
+      - "${DEV_PORT:-8080}:8080"
 
     working_dir: /workspace
