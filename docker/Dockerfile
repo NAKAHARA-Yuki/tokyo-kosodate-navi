@@ -43,6 +43,21 @@ RUN groupadd --gid $USER_GID $USERNAME \
     && mkdir -p /home/$USERNAME/.local/bin
 ENV PATH=/home/$USERNAME/.local/bin:$PATH
 
+# claude の起動スクリプト。
+# ホストの ~/.local/share/claude/versions/ を read-only でマウントして使うが、
+# そこには versions/2.1.220 のようなバイナリが並ぶだけで current のような
+# 固定の入口が無い。特定バージョンへの symlink にするとホスト側が更新された
+# 時点で壊れるので、実行時に最新を選ぶ。
+RUN printf '%s\n' \
+    '#!/bin/sh' \
+    'DIR="$HOME/.local/share/claude/versions"' \
+    '[ -d "$DIR" ] || { echo "Claude Code がマウントされていません: $DIR" >&2; exit 1; }' \
+    'BIN=$(ls -1 "$DIR" | sort -V | tail -1)' \
+    '[ -n "$BIN" ] || { echo "$DIR にバイナリがありません" >&2; exit 1; }' \
+    'exec "$DIR/$BIN" "$@"' \
+    > /usr/local/bin/claude \
+    && chmod +x /usr/local/bin/claude
+
 # Playwright のブラウザと OS 依存をイメージに焼き込む。
 # ここを実行時に任せると、手元で sudo が必要になって setup が止まる（実際に踏んだ）。
 # root で入れて全ユーザーから読める場所に置く。
