@@ -36,6 +36,14 @@ RUN curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
 # docker CLI は入れない。ソケットを渡さない方針のため使えないし、
 # make lock はこのイメージが本番と同じ 3.12 なのでそのまま解決できる。
 
+# git の設定。ホストの ~/.gitconfig はマウントしないので、コンテナ側で持たせる。
+#   credential.helper: これが無いと ~/.git-credentials をマウントしても
+#     git が読みに行かず push できない（実際に踏んだ）
+#   safe.directory   : uid はホストに合わせているので通常は不要だが、
+#     ずれたときに出るエラーが分かりにくいので先に潰しておく
+RUN git config --system credential.helper store \
+    && git config --system --add safe.directory /workspace
+
 RUN groupadd --gid $USER_GID $USERNAME \
     && useradd --uid $USER_UID --gid $USER_GID -m -s /bin/bash $USERNAME \
     && echo "$USERNAME ALL=(root) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME \

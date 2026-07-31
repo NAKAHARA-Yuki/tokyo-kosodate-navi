@@ -95,6 +95,11 @@ agent-up: ## Claude Code 用のコンテナを起動する（サーバー常駐�
 		|| { echo "❌ 先に 'make auth' を実行してください（dev 用の認証が要ります）"; exit 1; }
 	@test -f "$(HOME)/.claude.json" \
 		|| { echo "❌ ホスト側で claude にログインしてください"; exit 1; }
+	@# 無いまま起動すると docker が同名のディレクトリを勝手に作り、
+	@# 以降 git が壊れて原因が分かりにくくなる。先に止める。
+	@test -f "$(HOME)/.git-credentials" \
+		|| { echo "❌ GitHub の認証情報がありません（~/.git-credentials）"; \
+		     echo "   docs/onboarding.md「GitHub の初期設定」を参照してください"; exit 1; }
 	$(COMPOSE) up -d --build
 	@$(COMPOSE) exec -u root agent bash /workspace/docker/init-firewall.sh
 	@echo ""

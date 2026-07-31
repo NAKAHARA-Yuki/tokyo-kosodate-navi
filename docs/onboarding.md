@@ -52,7 +52,72 @@ make auth
 > 失敗する場合は `serviceAccountTokenCreator` が付いていません。
 > 管理者に `scripts/grant_member.sh <あなたのメール>` の実行を依頼してください。
 
-### 3. Claude Code にログイン
+### 3. GitHub の初期設定
+
+コンテナの中から `git push` や PR 作成をするために必要です。
+
+#### 3-1. 権限をもらう
+
+管理者にリポジトリの **Collaborator** に追加してもらってください
+（Settings → Collaborators）。招待メールが届くので承諾します。
+
+#### 3-2. アクセストークン（PAT）を作る
+
+GitHub はパスワードでの push を受け付けません。代わりにトークンを使います。
+
+https://github.com/settings/tokens → **Generate new token (classic)**
+
+チェックする権限は**2つ**です。
+
+| スコープ | なぜ必要か |
+|---|---|
+| `repo` | クローン・push・PR の作成 |
+| **`workflow`** | このリポジトリには `.github/workflows/` があるため |
+
+> **`workflow` を忘れると push が拒否されます。** エラーはこう出ます。
+> ```
+> refusing to allow a Personal Access Token to create or update workflow
+> `.github/workflows/ci.yml` without `workflow` scope
+> ```
+> 後から既存トークンに追加でき、トークンの値は変わりません。
+
+有効期限は好みですが、切れたら push できなくなるので長めを推奨します。
+**生成されたトークンは一度しか表示されません。** その場でコピーしてください。
+
+#### 3-3. トークンを git に覚えさせる
+
+`<あなたのGitHubユーザー名>` と `<トークン>` を置き換えて実行します。
+
+```bash
+printf 'https://<あなたのGitHubユーザー名>:<トークン>@github.com\n' > ~/.git-credentials
+chmod 600 ~/.git-credentials
+git config --global credential.helper store
+```
+
+> トークンはチャットやコミットに貼らないでください。このファイルの中だけに置きます。
+
+#### 3-4. コミットに使う名前とメールを設定する
+
+```bash
+cd tokyo-kosodate-navi
+git config user.name "あなたの名前"
+git config user.email "you@example.com"
+```
+
+> `--global` を付けなければ、このリポジトリだけの設定になります。
+> **コミット履歴は公開されます**（このリポジトリは public です）。
+> メールを公開したくない場合は GitHub の noreply アドレスを使ってください。
+> https://github.com/settings/emails で確認できます。
+
+#### 3-5. 確認
+
+```bash
+git ls-remote origin > /dev/null && echo "OK"
+```
+
+`OK` と出れば設定できています。
+
+### 4. Claude Code にログイン
 
 ```bash
 claude          # 初回はログインを求められる
