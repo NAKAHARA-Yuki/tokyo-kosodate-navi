@@ -36,6 +36,34 @@ RUN curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
 # docker CLI は入れない。ソケットを渡さない方針のため使えないし、
 # make lock はこのイメージが本番と同じ 3.12 なのでそのまま解決できる。
 
+# GitHub CLI。issue や PR の作成には API を叩く必要があり、git push だけでは足りない。
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/*
+
+# gh のラッパー。トークンは ~/.git-credentials にあるので実行時に読む。
+#
+# 環境変数として compose から渡す方法も取れるが、それだと docker inspect で
+# 同じサーバーの他ユーザーからトークンが見えてしまう。ファイルは 600 なので読めない。
+#
+# bash の rc に書く方法も取れない。Claude Code はコマンドを非対話シェルで実行するため
+# /etc/bash.bashrc も /etc/profile.d も読まれず、そこに書いても効かない。
+# ラッパーならシェルの種類に関係なく必ず通る。
+RUN printf '%s\n' \
+    '#!/bin/sh' \
+    'if [ -z "$GH_TOKEN" ] && [ -r "$HOME/.git-credentials" ]; then' \
+    '  GH_TOKEN=$(sed -n "s#^https://[^:]*:\\([^@]*\\)@github\\.com.*#\\1#p" "$HOME/.git-credentials" | head -1)' \
+    '  [ -n "$GH_TOKEN" ] && export GH_TOKEN' \
+    'fi' \
+    'exec /usr/bin/gh "$@"' \
+    > /usr/local/bin/gh \
+    && chmod +x /usr/local/bin/gh
+
 # git の設定。ホストの ~/.gitconfig はマウントしないので、コンテナ側で持たせる。
 #   credential.helper: これが無いと ~/.git-credentials をマウントしても
 #     git が読みに行かず push できない（実際に踏んだ）
