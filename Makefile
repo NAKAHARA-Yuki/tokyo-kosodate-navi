@@ -30,12 +30,55 @@ ifneq ($(wildcard $(SCOPED_ADC)),)
   export GOOGLE_APPLICATION_CREDENTIALS := $(SCOPED_ADC)
 endif
 
+# コンテナの中か外かで案内する内容が変わるので見分ける（イメージ側で作っている目印）
+IN_CONTAINER := $(wildcard /.dockerenv)
+
 .PHONY: help
 help: ## コマンド一覧を表示
 	@echo "使い方: make <target> [ENV=dev|staging|prod]   (現在: ENV=$(ENV))"
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+	@echo ""
+	@echo "───────────────────────────────────────────────"
+	@echo " はじめての人はこの順で（詳細: docs/onboarding.md）"
+	@echo "───────────────────────────────────────────────"
+	@$(MAKE) --no-print-directory next
+
+.PHONY: next
+next: ## 今の状態を見て「次にやること」を表示する
+	@# 手順を覚えていなくても、これを打てば進められる状態にしておく。
+	@# コンテナの中を先に判定する。ホスト側の前提（gcloud ログインなど）は
+	@# コンテナ内には存在しないので、順番を逆にすると誤った案内が出る。
+	@if [ -n "$(IN_CONTAINER)" ]; then \
+		echo "  コンテナの中にいます。そのまま作業できます。"; \
+		echo ""; \
+		echo "      claude --dangerously-skip-permissions --remote-control kosodate"; \
+		echo "      make check     lint + テスト + E2E"; \
+		echo "      make dev       アプリを起動 (http://localhost:$(DEV_PORT))"; \
+	elif [ ! -f "$(HOME)/.git-credentials" ]; then \
+		echo "  ▶ GitHub の認証を設定する"; \
+		echo "      docs/onboarding.md「GitHub の初期設定」を参照"; \
+	elif [ ! -f "$(HOME)/.config/gcloud/application_default_credentials.json" ]; then \
+		echo "  ▶ GCP にログインする"; \
+		echo "      gcloud auth application-default login"; \
+	elif [ ! -f "$(SCOPED_ADC)" ]; then \
+		echo "  ▶ GCP の権限を dev だけに絞る"; \
+		echo "      make auth"; \
+	elif [ ! -f "$(HOME)/.claude.json" ]; then \
+		echo "  ▶ Claude Code にログインする"; \
+		echo "      claude"; \
+	elif ! $(COMPOSE) ps --status running 2>/dev/null | grep -q agent; then \
+		echo "  ▶ コンテナを起動する"; \
+		echo "      make agent-up"; \
+	elif [ -z "$$TMUX" ]; then \
+		echo "  ▶ tmux を起動してからコンテナに入る"; \
+		echo "      tmux new -A -s claude     # 無ければ作る / あれば入る"; \
+		echo "      make agent-shell"; \
+	else \
+		echo "  ▶ コンテナに入る"; \
+		echo "      make agent-shell"; \
+	fi
 
 .PHONY: env
 env: ## 現在の環境設定を表示
@@ -61,7 +104,10 @@ setup: ## 仮想環境と依存関係を用意する（devcontainer では不要
 		    && echo "⚠️  OS依存パッケージの導入をスキップしました（sudo が必要）。" \
 		    && echo "    E2E がブラウザ起動で失敗する場合は手動で実行してください:" \
 		    && echo "    sudo $(VENV)/bin/playwright install-deps chromium")
-	@echo "✅ setup 完了。GCP未認証なら: gcloud auth application-default login"
+	@echo ""
+	@echo "✅ setup 完了"
+	@echo ""
+	@$(MAKE) --no-print-directory next
 
 .PHONY: auth
 auth: ## Claude Code 経由の GCP アクセスを claude-dev に切り替える（初回に1度）
@@ -72,6 +118,8 @@ auth: ## Claude Code 経由の GCP アクセスを claude-dev に切り替える
 		exit 1; \
 	fi
 	$(PY) scripts/setup_scoped_adc.py
+	@echo ""
+	@$(MAKE) --no-print-directory next
 
 # ---------------------------------------------------------------- 常駐エージェント
 
@@ -103,11 +151,48 @@ agent-up: ## Claude Code 用のコンテナを起動する（サーバー常駐�
 	$(COMPOSE) up -d --build
 	@$(COMPOSE) exec -u root agent bash /workspace/docker/init-firewall.sh
 	@echo ""
-	@echo "✅ 起動しました。入るには: make agent-shell"
+	@echo "✅ コンテナを起動しました（サーバー再起動後も自動で上がります）"
+	@echo ""
+	@echo "───────────────────────────────────────────────"
+	@echo " 次にやること"
+	@echo "───────────────────────────────────────────────"
+	@if [ -z "$$TMUX" ]; then \
+		echo "  1. tmux を起動する（接続が切れても作業が生き残ります）"; \
+		echo ""; \
+		echo "       tmux new -A -s claude"; \
+		echo ""; \
+		echo "  2. コンテナに入る"; \
+		echo ""; \
+		echo "       make agent-shell"; \
+	else \
+		echo "  tmux の中にいます。そのままコンテナに入れます。"; \
+		echo ""; \
+		echo "       make agent-shell"; \
+	fi
+	@echo ""
+	@echo "  tmux の使い方: docs/tmux.md"
 
 .PHONY: agent-shell
 agent-shell: ## コンテナに入る（この中で claude を起動する）
-	@echo "Claude Code は次で起動します: claude --dangerously-skip-permissions"
+	@# tmux の外から入ると、接続が切れた時点で中の作業も死ぬ。止めはしないが必ず伝える。
+	@if [ -z "$$TMUX" ]; then \
+		echo ""; \
+		echo "⚠️  tmux の外にいます"; \
+		echo ""; \
+		echo "   このまま入ると、接続が切れた時点で作業中の処理も止まります。"; \
+		echo "   一度抜けて、tmux の中から入り直すことを勧めます。"; \
+		echo ""; \
+		echo "       tmux new -A -s claude"; \
+		echo "       make agent-shell"; \
+		echo ""; \
+	fi
+	@echo "───────────────────────────────────────────────"
+	@echo " コンテナに入ります。Claude Code の起動コマンド:"
+	@echo ""
+	@echo "   claude --dangerously-skip-permissions --remote-control kosodate"
+	@echo ""
+	@echo " 迷ったら make next / make help"
+	@echo "───────────────────────────────────────────────"
 	$(COMPOSE) exec agent bash
 
 .PHONY: agent-down
@@ -135,7 +220,12 @@ lock: ## 本番イメージの依存を再固定する (app/requirements.in を�
 			pip install -q pip-tools && \
 			pip-compile --quiet --generate-hashes --output-file requirements.lock requirements.in'; \
 	fi
-	@echo "✅ app/requirements.lock を更新しました。差分を確認してコミットしてください"
+	@echo ""
+	@echo "✅ app/requirements.lock を更新しました"
+	@echo ""
+	@echo "   次にやること:"
+	@echo "     1. git diff app/requirements.lock   意図しない巻き添え更新が無いか確認"
+	@echo "     2. make check                       テストが通るか確認"
 
 # ---------------------------------------------------------------- 品質
 
@@ -232,3 +322,5 @@ clone-data: ## 本番データを別環境にコピーする (例: make clone-da
 	done
 	@$(MAKE) --no-print-directory graph ENV=$(ENV)
 	@echo "✅ $(ENV) へのコピー完了"
+	@echo ""
+	@echo "   次にやること: make verify ENV=$(ENV)   グラフが引けるか確認"
