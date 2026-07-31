@@ -1,0 +1,72 @@
+# サーバー上に常駐させて Claude Code を動かすためのコンテナ。
+#
+# 1台のサーバーを複数人で共有できるよう、プロジェクト名・コンテナ名・ポートを
+# ユーザーごとに分けている。値は Makefile が export する。
+#
+#   make agent-up      起動（サーバー再起動後も自動で上がる）
+#   make agent-shell   入る（tmux はホスト側で回す想定）
+#   make agent-down    止める
+#
+# 使い方の詳細は docs/onboarding.md「サーバーで常駐させる」を参照。
+
+name: kosodate-${AGENT_USER:-shared}
+
+services:
+  agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        # ホストの uid/gid に合わせる。合わせないと bind mount したリポジトリや
+        # ~/.claude に書き込めず、uid 1000 の人以外が詰まる。
+        USER_UID: ${HOST_UID:-1000}
+        USER_GID: ${HOST_GID:-1000}
+    # uid が違えば中身も違うのでイメージもユーザーごとに分ける
+    image: kosodate-agent:${AGENT_USER:-shared}
+    container_name: kosodate-agent-${AGENT_USER:-shared}
+    restart: unless-stopped
+    # Chromium は共有メモリを多く使う。docker の既定 64MB では E2E が
+    # ブラウザのクラッシュで大量に落ちる（22件中20件がエラーになった）。
+    shm_size: 1gb
+    # 外向き通信を許可リストに絞るため（init-firewall.sh が iptables を触る）
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      # 依存はイメージに焼き込み済み。.venv を作らずそちらを使う
+      VENV: /usr/local
+      PLAYWRIGHT_BROWSERS_PATH: /opt/playwright
+      GCP_PROJECT_ID: opendatahackathon-503500
+      # 未指定なら dev。誤って本番を触らないための既定（ADR 0004）
+      APP_ENV: dev
+      # dev だけ書き込める認証。これ以外の GCP 認証はコンテナ内に存在しない
+      GOOGLE_APPLICATION_CREDENTIALS: /home/dev/.config/gcloud/claude-dev-adc.json
+    volumes:
+      - ..:/workspace
+
+      # Claude Code 本体。ホストと同じバージョンをそのまま使う（read-only）
+      - ${HOME}/.local/share/claude:/home/dev/.local/share/claude:ro
+
+      # Claude Code の設定と認証。ここは書き込めないと動かないので rw。
+      # 名前付きボリュームにせずホストと共有し、ホスト側のログイン状態を引き継ぐ。
+      - ${HOME}/.claude:/home/dev/.claude
+      - ${HOME}/.claude.json:/home/dev/.claude.json
+
+      # GCP は dev 用の1ファイルだけ。~/.config/gcloud を丸ごと渡すと
+      # 本人の editor 権限の認証まで見えてしまい、コンテナから本番を触れてしまう。
+      # このファイルはホスト側で `make auth` を1度実行すると作られる（ADR 0008）。
+      - ${HOME}/.config/gcloud/claude-dev-adc.json:/home/dev/.config/gcloud/claude-dev-adc.json:ro
+
+      # git push / PR 作成をさせるため。PAT は repo + workflow スコープ。
+      - ${HOME}/.git-credentials:/home/dev/.git-credentials:ro
+
+    # docker ソケットは意図的に渡していない。
+    # 渡すとコンテナから特権コンテナを起動でき、ホストの root 相当になって
+    # 隔離が意味を失う。make lock はコンテナが本番と同じ 3.12 なのでそのまま動く。
+
+    ports:
+      # make dev で起動したアプリをホストから見るため。
+      # 同じサーバーで複数人が起動すると衝突するので、各自 .env で DEV_PORT を変える。
+      - "${DEV_PORT:-8080}:8080"
+
+    working_dir: /workspace

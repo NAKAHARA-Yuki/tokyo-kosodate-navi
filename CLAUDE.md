@@ -61,8 +61,11 @@ GCP プロジェクトは1つのまま、**BigQuery データセットと Cloud 
 `make etl ENV=prod` や `make graph ENV=staging` は権限エラーで落ちる。これは仕様。
 staging へ反映したいなら main へマージ、prod なら `v*.*.*` タグを push する。
 
-開発環境は devcontainer が正。Python は本番と同じ 3.12 で、依存も Playwright も
-イメージに焼き込み済み（`make setup` 不要、`VENV=/usr/local`）。
+開発は `docker/compose.yaml` のコンテナ内で行うのが正（`make agent-up` → `make agent-shell`）。
+Python は本番と同じ 3.12 で、依存も Playwright もイメージに焼き込み済み
+（`make setup` 不要、`VENV=/usr/local`）。コンテナ内は sudo 可・ホストからは隔離・
+外向き通信は許可リストのみ（[docs/adr/0009](docs/adr/0009-agent-container.md)）。
+docker ソケットは渡していないので、コンテナ内から docker は使えない。
 
 `/api/healthz` が `{"env": ..., "dataset": ...}` を返すので、どこを見ているかは常に確認できる。
 
@@ -130,6 +133,8 @@ make lock                 # 本番イメージの依存を再固定（requiremen
 
 ## コードを書くときの約束
 
+- **コミットのメールアドレスは GitHub の noreply を使う**（`<数字>+<ユーザー名>@users.noreply.github.com`）。
+  リポジトリは public なので、実アドレスを設定すると履歴として公開される。
 - コメントは「なぜそうしたか」を書く。何をしているかはコードを読めば分かる。
 - 日本語のコメント・ドキュメントで統一（チームの共通言語）。
 - 推測でモデル名やAPIの仕様を書かない。動かして確かめてから書く。

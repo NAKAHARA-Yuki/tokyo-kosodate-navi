@@ -73,13 +73,68 @@ auth: ## Claude Code 経由の GCP アクセスを claude-dev に切り替える
 	fi
 	$(PY) scripts/setup_scoped_adc.py
 
+# ---------------------------------------------------------------- 常駐エージェント
+
+# 1台のサーバーを複数人で使うため、コンテナ名・プロジェクト名・ポートを
+# ユーザーごとに分ける。分けないと 2人目が「name already in use」で起動できない。
+export AGENT_USER := $(shell id -un)
+# コンテナ内のユーザーをホストの uid/gid に合わせる。ずれると bind mount した
+# リポジトリや ~/.claude に書き込めない（uid 1000 の人だけ動いて他は詰まる）。
+export HOST_UID   := $(shell id -u)
+export HOST_GID   := $(shell id -g)
+# 同じサーバーで複数人が make dev すると 8080 を取り合う。各自 .env で変える。
+DEV_PORT          ?= 8080
+export DEV_PORT
+
+COMPOSE := docker compose -f docker/compose.yaml
+
+.PHONY: agent-up
+agent-up: ## Claude Code 用のコンテナを起動する（サーバー常駐）
+	@# 前提を先に確かめる。起動してから「認証が無い」と気づくと原因が分かりにくい。
+	@test -f "$(HOME)/.config/gcloud/claude-dev-adc.json" \
+		|| { echo "❌ 先に 'make auth' を実行してください（dev 用の認証が要ります）"; exit 1; }
+	@test -f "$(HOME)/.claude.json" \
+		|| { echo "❌ ホスト側で claude にログインしてください"; exit 1; }
+	@# 無いまま起動すると docker が同名のディレクトリを勝手に作り、
+	@# 以降 git が壊れて原因が分かりにくくなる。先に止める。
+	@test -f "$(HOME)/.git-credentials" \
+		|| { echo "❌ GitHub の認証情報がありません（~/.git-credentials）"; \
+		     echo "   docs/onboarding.md「GitHub の初期設定」を参照してください"; exit 1; }
+	$(COMPOSE) up -d --build
+	@$(COMPOSE) exec -u root agent bash /workspace/docker/init-firewall.sh
+	@echo ""
+	@echo "✅ 起動しました。入るには: make agent-shell"
+
+.PHONY: agent-shell
+agent-shell: ## コンテナに入る（この中で claude を起動する）
+	@echo "Claude Code は次で起動します: claude --dangerously-skip-permissions"
+	$(COMPOSE) exec agent bash
+
+.PHONY: agent-down
+agent-down: ## コンテナを止める
+	$(COMPOSE) down
+
+.PHONY: agent-firewall
+agent-firewall: ## 外向き通信の許可リストを入れ直す（宛先のIPが変わったとき）
+	$(COMPOSE) exec -u root agent bash /workspace/docker/init-firewall.sh
+
 .PHONY: lock
 lock: ## 本番イメージの依存を再固定する (app/requirements.in を変えたら必ず実行)
-	@# 本番と同じ python:3.12-slim の中で解決する。ローカルの Python で作ると
-	@# バージョンが違うぶん本番で入らないロックができる（ローカルは 3.14）。
-	docker run --rm -v "$(PWD)/app:/w" -w /w python:3.12-slim sh -c '\
-		pip install -q pip-tools && \
-		pip-compile --quiet --generate-hashes --output-file requirements.lock requirements.in'
+	@# ロックは解決した Python のバージョンに紐づく。本番イメージは 3.12 なので、
+	@# 3.12 以外で作ると本番で入らないロックになる。
+	@# devcontainer は本番と同じ 3.12 なのでそのまま実行できる。
+	@# それ以外の環境では docker で 3.12 を用意する（そのために docker が要る）。
+	@if [ "$$($(PY) -c 'import sys; print("%d.%d" % sys.version_info[:2])')" = "3.12" ]; then \
+		echo "Python 3.12 のためそのまま解決します"; \
+		$(PIP) install -q pip-tools && \
+		cd app && ../$(VENV)/bin/pip-compile --quiet --generate-hashes \
+			--output-file requirements.lock requirements.in; \
+	else \
+		echo "Python が 3.12 ではないため docker で解決します"; \
+		docker run --rm -v "$(PWD)/app:/w" -w /w python:3.12-slim sh -c '\
+			pip install -q pip-tools && \
+			pip-compile --quiet --generate-hashes --output-file requirements.lock requirements.in'; \
+	fi
 	@echo "✅ app/requirements.lock を更新しました。差分を確認してコミットしてください"
 
 # ---------------------------------------------------------------- 品質
