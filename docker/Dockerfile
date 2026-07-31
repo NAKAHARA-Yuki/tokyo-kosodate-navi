@@ -1,6 +1,8 @@
-# 本番イメージと同じ Python にそろえる。
-# ローカルの Python がこれとズレていると、make lock で本番に入らないロックができるなど、
-# 「手元では動くのに本番で落ちる」類の問題が起きる（実際に 3.14 と 3.12 でズレていた）。
+# Claude Code を常駐させて開発作業をさせるためのコンテナ。
+#
+# 本番イメージと同じ Python にそろえる。ホストの Python がこれとズレていると、
+# make lock で本番に入らないロックができるなど「手元では動くのに本番で落ちる」問題が起きる
+# （実際にホストが 3.14、本番が 3.12 でズレていた）。
 FROM python:3.12-slim
 
 ARG USERNAME=dev
@@ -13,6 +15,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl gnupg git make sudo less procps \
+        tmux ripgrep jq \
+        iptables ipset dnsutils \
     && rm -rf /var/lib/apt/lists/*
 
 # gcloud / bq（ETL とデプロイの確認に使う）
@@ -24,19 +28,20 @@ RUN curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
     && apt-get install -y --no-install-recommends google-cloud-cli \
     && rm -rf /var/lib/apt/lists/*
 
-# docker CLI。make lock がホストの docker を使うため（ソケットは devcontainer.json でマウント）
-RUN curl -fsSL https://download.docker.com/linux/debian/gpg \
-        | gpg --dearmor -o /usr/share/keyrings/docker.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable" \
-        > /etc/apt/sources.list.d/docker.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends docker-ce-cli \
-    && rm -rf /var/lib/apt/lists/*
+# Claude Code 本体はイメージに入れない。ホストの ~/.local/share/claude を
+# read-only でマウントして使う（compose.yaml 参照）。インストーラを叩かないぶん
+# バージョンがホストと必ず一致し、認証もそのまま共有できる。
+# ネイティブバイナリだが Debian 上でそのまま動くことを確認済み。
+
+# docker CLI は入れない。ソケットを渡さない方針のため使えないし、
+# make lock はこのイメージが本番と同じ 3.12 なのでそのまま解決できる。
 
 RUN groupadd --gid $USER_GID $USERNAME \
     && useradd --uid $USER_UID --gid $USER_GID -m -s /bin/bash $USERNAME \
     && echo "$USERNAME ALL=(root) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME \
-    && chmod 0440 /etc/sudoers.d/$USERNAME
+    && chmod 0440 /etc/sudoers.d/$USERNAME \
+    && mkdir -p /home/$USERNAME/.local/bin
+ENV PATH=/home/$USERNAME/.local/bin:$PATH
 
 # Playwright のブラウザと OS 依存をイメージに焼き込む。
 # ここを実行時に任せると、手元で sudo が必要になって setup が止まる（実際に踏んだ）。
@@ -50,3 +55,6 @@ RUN pip install --no-cache-dir -r /tmp/deps/requirements-dev.txt \
     && rm -rf /tmp/deps
 
 USER $USERNAME
+WORKDIR /workspace
+# 常駐させて docker exec で入る使い方。中で何かを自動起動はしない。
+CMD ["sleep", "infinity"]

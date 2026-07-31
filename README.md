@@ -41,24 +41,29 @@
 
 ## セットアップ
 
-### devcontainer（推奨）
+### コンテナで開発する（推奨）
 
-VS Code / Cursor で開いて「Reopen in Container」を選ぶだけです。Python・依存関係・
-Playwright のブラウザ・gcloud CLI がすべて入った状態で立ち上がります。
+Python・依存関係・Playwright のブラウザ・gcloud CLI がすべて入ったコンテナが立ち上がります。
 **`make setup` は不要**で、Python も本番と同じ 3.12 にそろいます。
 
 ```bash
 git clone <このリポジトリ> && cd tokyo-kosodate-navi
-code .                                   # → Reopen in Container
 
 gcloud auth application-default login    # 初回のみ
 make auth                                # GCP アクセスを claude-dev に切り替え
+
+make agent-up                            # コンテナを起動
+make agent-shell                         # 入る
 make check                               # lint + テスト + E2E
 ```
 
-`make auth` については[下の「権限」](#権限)を参照してください。
+コンテナ内では **sudo を含めて自由に操作**でき、壊しても作り直せます。
+GCP アクセスは dev 限定、外向き通信は許可リストのみ、ホストからは隔離されています。
 
-### devcontainer を使わない場合
+Claude Code をサーバーに常駐させてスマホから使う手順は
+[docs/onboarding.md](docs/onboarding.md) を参照してください。
+
+### コンテナを使わない場合
 
 前提: Python 3.12、`gcloud` 認証済み、GCP プロジェクトへのアクセス権
 
