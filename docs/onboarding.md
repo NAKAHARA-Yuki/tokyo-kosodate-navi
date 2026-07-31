@@ -98,16 +98,25 @@ git config --global credential.helper store
 
 #### 3-4. コミットに使う名前とメールを設定する
 
+**メールアドレスは GitHub の noreply アドレスを使ってください。**
+このリポジトリは public で、**コミット履歴は誰でも見られます**。
+実アドレスを設定すると、それがそのまま公開されます。
+
+noreply アドレスは https://github.com/settings/emails で確認できます
+（「Keep my email addresses private」の項に `12345678+username@users.noreply.github.com`
+という形式で書かれています）。
+
 ```bash
 cd tokyo-kosodate-navi
 git config user.name "あなたの名前"
-git config user.email "you@example.com"
+git config user.email "<数字>+<ユーザー名>@users.noreply.github.com"
 ```
 
 > `--global` を付けなければ、このリポジトリだけの設定になります。
-> **コミット履歴は公開されます**（このリポジトリは public です）。
-> メールを公開したくない場合は GitHub の noreply アドレスを使ってください。
-> https://github.com/settings/emails で確認できます。
+> 他のリポジトリの設定に影響しません。
+>
+> 設定を忘れたまま数コミットしてしまった場合、後から履歴を書き換えるのは
+> 面倒です（push 済みなら特に）。**最初に設定してください。**
 
 #### 3-5. 確認
 
