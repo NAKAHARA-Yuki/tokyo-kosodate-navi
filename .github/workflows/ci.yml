@@ -84,3 +84,32 @@ jobs:
       # Cloud Run へのデプロイ前に、イメージがビルドできることだけ確認する
       - name: アプリのイメージをビルド
         run: docker build -t kosodate-graph-viewer:ci ./app
+
+      - name: フロントエンドのイメージをビルド
+        run: docker build -t kosodate-frontend:ci ./frontend
+
+  frontend:
+    name: Frontend Lint & Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 依存関係をインストール
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      # BACKEND_URL は実行時にCloud Runの環境変数として渡すため、ビルド時は不要
+      # （app/page.tsx は force-dynamic にしており、ビルド時にbackendへは接続しない）。
+      - name: Build
+        working-directory: frontend
+        run: npm run build

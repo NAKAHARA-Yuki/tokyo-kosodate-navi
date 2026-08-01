@@ -25,9 +25,14 @@ ENV ?= dev
 
 ifeq ($(ENV),prod)
   SERVICE := kosodate-graph-viewer
+  FRONTEND_SERVICE := kosodate-frontend
 else
   SERVICE := kosodate-graph-viewer-$(ENV)
+  FRONTEND_SERVICE := kosodate-frontend-$(ENV)
 endif
+
+# フロントエンド専用の実行SA（docs/adr/0013）。backend への呼び出しをこのSAだけに絞る。
+FRONTEND_SA := kosodate-frontend@$(PROJECT_ID).iam.gserviceaccount.com
 
 export APP_ENV       := $(ENV)
 export GCP_PROJECT_ID := $(PROJECT_ID)
@@ -357,6 +362,53 @@ deploy: ## Cloud Run の dev にデプロイする (staging/prod は GitHub Acti
 	@echo "✅ あなた専用の URL に出しました（他の人のデプロイに上書きされません）"
 	@echo ""
 	@$(MAKE) --no-print-directory url ENV=$(ENV)
+
+.PHONY: url-frontend
+url-frontend: ## デプロイ済みフロントエンドのURLを表示する
+	@if [ "$(ENV)" = "dev" ]; then \
+		TAGGED=$$(gcloud run services describe $(FRONTEND_SERVICE) --project $(PROJECT_ID) --region $(REGION) \
+			--format="value(status.traffic.filter(tag:$(DEPLOY_TAG)).extract(url))" 2>/dev/null | tr -d '[]'); \
+		if [ -n "$$TAGGED" ]; then \
+			echo "$$TAGGED"; \
+		else \
+			echo "（あなたのタグはまだありません。make deploy-frontend ENV=dev で作られます）"; \
+			gcloud run services describe $(FRONTEND_SERVICE) --project $(PROJECT_ID) --region $(REGION) --format='value(status.url)'; \
+		fi; \
+	else \
+		gcloud run services describe $(FRONTEND_SERVICE) --project $(PROJECT_ID) --region $(REGION) --format='value(status.url)'; \
+	fi
+
+.PHONY: deploy-frontend
+deploy-frontend: ## Next.js フロントエンドを dev にデプロイする (staging/prod は GitHub Actions 経由)
+	@# deploy と同じ理由で dev 限定（docs/adr/0008）。
+	@if [ "$(ENV)" != "dev" ]; then \
+		echo "❌ $(ENV) へは手元からデプロイできません。"; \
+		echo ""; \
+		echo "   staging: main へマージすると自動でデプロイされます"; \
+		echo "   prod   : v*.*.* タグを push してください"; \
+		echo "            git tag -a v1.2.3 -m '説明' && git push origin v1.2.3"; \
+		echo ""; \
+		echo "   詳細: CONTRIBUTING.md「リリース手順」"; \
+		exit 1; \
+	fi
+	@# backend の呼び出しをフロント専用SAに絞っている（docs/adr/0013）。
+	@# --service-account を明示しないと、既定の compute SA に戻ってしまう恐れがある。
+	@BACKEND_URL=$$(gcloud run services describe $(SERVICE) --project $(PROJECT_ID) --region $(REGION) \
+		--format='value(status.url)'); \
+	gcloud run deploy $(FRONTEND_SERVICE) \
+		--source ./frontend \
+		--project $(PROJECT_ID) \
+		--region $(REGION) \
+		--allow-unauthenticated \
+		--service-account $(FRONTEND_SA) \
+		--set-env-vars BACKEND_URL=$$BACKEND_URL \
+		--memory 512Mi --cpu 1 --min-instances 0 --max-instances 3 --timeout 120 \
+		--tag $(DEPLOY_TAG) --no-traffic \
+		--quiet
+	@echo ""
+	@echo "✅ あなた専用の URL に出しました（他の人のデプロイに上書きされません）"
+	@echo ""
+	@$(MAKE) --no-print-directory url-frontend ENV=$(ENV)
 
 # ---------------------------------------------------------------- データパイプライン
 
