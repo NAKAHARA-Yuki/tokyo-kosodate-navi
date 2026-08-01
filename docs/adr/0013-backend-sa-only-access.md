@@ -49,10 +49,29 @@ issue #33 で、フロントエンドを Next.js の別サービスに分離す�
 | 2 | `kosodate-frontend-dev` の実行 SA を専用 SA に差し替え | **完了** |
 | 3 | 専用 SA に backend(dev) の `run.invoker` を付与 | **完了** |
 | 4 | `claude-dev` に専用 SA の `iam.serviceAccountUser` を付与 | **完了** |
-| 5 | Next.js からサーバ側で ID トークン付き呼び出し | issue #33 の実装 |
-| 6 | backend から `allUsers` を外す（dev → staging → prod） | **5 の動作確認後** |
+| 5 | Next.js からサーバ側で ID トークン付き呼び出し | **完了**（2026-08-01。dev の実サービスで確認済み） |
+| 6 | backend から `allUsers` を外す（dev → staging → prod） | 未着手 |
 
 1〜4 は既存サービスに影響しない。実際に dev の backend / frontend とも 200 のままであることを確認した。
+
+5 は `kosodate-frontend-dev` に実際にデプロイし、タグ付きURL経由で
+Server Component（直接呼び出し）・Route Handler プロキシの両方から
+backend の `/api/healthz` を ID トークン付きで呼べることを確認した
+（`env: dev` が正しく返る）。
+
+### 追記: `--source` デプロイ用 GCS バケットの権限が claude-dev に無かった
+
+`gcloud run deploy --source` は Cloud Build がソースをアップロードする先として
+`run-sources-{project}-{region}` という GCS バケットを使う。このバケット自体への
+`claude-dev` の権限が付いておらず（`storage.buckets.get` すら無い）、
+claude-dev からの `--source` デプロイが frontend・backend とも失敗することが分かった。
+これは ADR 0008 で Cloud Run サービス単位の権限は個別に付与してきたが、
+その裏で使われる GCS バケットの存在と権限は見落としていたためと考えられる。
+
+frontend の初回デプロイは人間の権限で行い、動作確認自体は完了した。
+`claude-dev` から継続的に `make deploy-frontend` を回せるようにするには、
+このバケットに対する `storage.objects.admin`（または同等の）権限を
+`claude-dev` に個別付与する必要がある。**未対応**（別途対応する）。
 
 ## 理由
 

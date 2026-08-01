@@ -19,17 +19,28 @@ flowchart TB
         GRAPH[["PROPERTY GRAPH<br/>kosodate_graph"]]
     end
 
-    subgraph RUN["Cloud Run: FastAPI (app/)"]
+    subgraph RUN["Cloud Run: FastAPI (app/) — backend"]
         MATCH["判定層<br/>定型クエリのみ・LLM不使用"]
         SUPPORT["伴走層<br/>Gemini"]
     end
 
-    UI[ブラウザ<br/>cytoscape.js]
+    subgraph FRONT["Cloud Run: Next.js (frontend/) — frontend"]
+        PROXY["サーバサイド<br/>IDトークン付きでbackendを呼ぶ（ADR 0013）"]
+    end
+
+    UI[ブラウザ]
 
     SRC --> FETCH --> NORM --> AGE --> EDGE --> NODES & EDGES --> GRAPH
-    GRAPH --> MATCH --> UI
-    NODES --> SUPPORT --> UI
+    GRAPH --> MATCH --> PROXY
+    NODES --> SUPPORT --> PROXY
+    PROXY --> UI
 ```
+
+**backend と frontend は別々の Cloud Run サービス**（ADR 0013）。ブラウザにはメタデータサーバが
+無く ID トークンを安全に持てないため、frontend のサーバサイド（Route Handler /
+Server Component）が専用サービスアカウント（`kosodate-frontend@...`）で backend を呼ぶ。
+段階導入中で、現時点では backend の `/` `/debug` もまだ残っており `allUsers` も外していない
+（進捗は ADR 0013 参照）。
 
 ## 層ごとの責務
 
@@ -89,32 +100,40 @@ BigQuery の構造化カラムを直接 WHERE 句で比較するだけで対象�
 判定結果を変えることはなく、既に確定した制度情報を分かりやすくするだけです。
 プロンプトで「制度情報にないことは補わない」を明示し、レスポンスに disclaimer を付けます。
 
-### フロントエンド
+### フロントエンド（移行中）
 
-`app/templates/index.html` の単一ファイル。FastAPI が返し、cytoscape.js で描画します。
-本格的な新画面ができるまでの間、動作確認用として `/debug` で配信しています
-（`/` は新画面のための仮プレースホルダー。詳細は issue #12）。
+Next.js（`frontend/`）に移行中（issue #33）。別の Cloud Run サービスとして動き、
+backend へは ID トークン付きでサーバサイドから呼ぶ（ADR 0013）。
 
-Next.js ではありません。ハッカソン起点で素早く作れることを優先した結果ですが、
-規模が大きくなったら分離を検討する余地があります（→ 未決定事項）。
+| ファイル | 責務 |
+|---|---|
+| `frontend/lib/backend.ts` | backend を ID トークン付きで呼ぶ共通ヘルパー |
+| `frontend/app/api/[...path]/route.ts` | backend への catch-all プロキシ（ブラウザから同一オリジンで叩けるようにする） |
+| `frontend/app/page.tsx` | 現時点では疎通確認用の最小ページ（本物のトップページは後続PRで実装） |
 
-主なビュー:
+移行が完了するまでの間、既存画面（`app/templates/index.html`、cytoscape.js）は
+backend の `/debug` に残っている。`/` は新画面のための仮プレースホルダー（issue #12）。
+
+旧画面の主なビュー（参考。移行完了後は frontend 側に置き換わる）:
 - **グラフ**: 「自分」を中心に対象制度が放射状に並ぶ。制度をタップすると条件・書類だけに絞り込む
 - **タイムライン**: 妊娠中〜18歳の8ステージに制度を配置
 
 ## デプロイ
 
 ```bash
-make deploy   # gcloud run deploy --source ./app
+make deploy            # backend: gcloud run deploy --source ./app
+make deploy-frontend   # frontend: gcloud run deploy --source ./frontend
 ```
 
-Cloud Run の `kosodate-graph-viewer`（asia-northeast1、認証不要で公開）。
-Cloud Build がソースから Docker イメージをビルドします。
+Cloud Run の `kosodate-graph-viewer`（backend）と `kosodate-frontend`（frontend）、
+いずれも asia-northeast1・認証不要で公開（frontendのみ。backendはADR 0013で段階的に
+`allUsers` を外していく）。Cloud Build がソースから Docker イメージをビルドします。
 
 ## 現時点で未決定・積み残し
 
-- フロントの本格化（Next.js 移行の是非）
 - ユーザープロフィールの永続化先（現在はクライアント側のみ）
 - データ更新の自動化（Cloud Scheduler + Cloud Run Job）
 - タグコードの正式なマスタ入手（現在は統計的推定ラベル）
 - 独立した設定画面と、書類チェックリスト／添付添削ビュー
+- frontend の staging/prod サービス用に、専用SAを環境ごとに分けるか
+  `kosodate-frontend@...` を共有するか（ADR 0013 積み残し）
