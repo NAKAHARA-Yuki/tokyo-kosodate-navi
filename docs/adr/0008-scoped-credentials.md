@@ -68,6 +68,11 @@ gcloud run services add-iam-policy-binding <サービス名> \
 **プロジェクト全体に `roles/run.admin` を付けてはいけない。** それをやると
 staging と prod のサービスも触れるようになり、この ADR の前提が崩れる。
 
+`--source` デプロイに使う GCS バケット `run-sources-{project}-{region}` も同じ構図で、
+**存在しない状態では `claude-dev` が作れない**（`storage.buckets.create` が無い）。
+リージョンごとに1つなので、初回の1回だけ広い権限で作れば以降は `claude-dev` で回る
+（作成時に `roles/storage.objectAdmin` が付く。実測済み → [ADR 0013](0013-backend-sa-only-access.md)）。
+
 #### 実施記録
 
 | 日付 | サービス | 実施者 | 経緯 |

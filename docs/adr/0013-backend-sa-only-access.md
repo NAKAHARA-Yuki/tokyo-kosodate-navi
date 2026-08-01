@@ -59,19 +59,43 @@ Server Component（直接呼び出し）・Route Handler プロキシの両方�
 backend の `/api/healthz` を ID トークン付きで呼べることを確認した
 （`env: dev` が正しく返る）。
 
-### 追記: `--source` デプロイ用 GCS バケットの権限が claude-dev に無かった
+### 追記: `--source` デプロイ用 GCS バケット（**解決済み。個別の権限付与は不要だった**）
 
 `gcloud run deploy --source` は Cloud Build がソースをアップロードする先として
-`run-sources-{project}-{region}` という GCS バケットを使う。このバケット自体への
-`claude-dev` の権限が付いておらず（`storage.buckets.get` すら無い）、
-claude-dev からの `--source` デプロイが frontend・backend とも失敗することが分かった。
-これは ADR 0008 で Cloud Run サービス単位の権限は個別に付与してきたが、
-その裏で使われる GCS バケットの存在と権限は見落としていたためと考えられる。
+`run-sources-{project}-{region}` という GCS バケットを使う。
+frontend の初回デプロイ時、このバケットが**まだ存在せず**、
+`claude-dev` は `storage.buckets.create` を持たないため失敗した。
 
-frontend の初回デプロイは人間の権限で行い、動作確認自体は完了した。
-`claude-dev` から継続的に `make deploy-frontend` を回せるようにするには、
-このバケットに対する `storage.objects.admin`（または同等の）権限を
-`claude-dev` に個別付与する必要がある。**未対応**（別途対応する）。
+当初これを「バケットへの権限が `claude-dev` に無い。個別付与が必要」と記録したが、
+**それは誤りだった。** 実際に必要だったのは最初の1回の作成だけで、
+バケットができた後は `claude-dev` でそのまま回る。
+
+バケット作成時に `claude-dev` へ `roles/storage.objectAdmin` が付く。
+
+```
+roles/storage.objectAdmin
+  serviceAccount:claude-dev@opendatahackathon-503500.iam.gserviceaccount.com
+```
+
+2026-08-02、バケット作成後に `claude-dev` の認証情報で実測した結果:
+
+| 操作 | 結果 |
+|---|---|
+| `gcloud storage buckets describe` | 成功 |
+| `gcloud storage ls`（オブジェクト一覧） | 成功 |
+| `make deploy-frontend ENV=dev` | 成功（`kosodate-frontend-dev-00004-yos`） |
+| `make deploy ENV=dev`（backend） | 成功（`kosodate-graph-viewer-dev-00005-sos`） |
+
+**frontend・backend とも `claude-dev` で継続的にデプロイできる。追加の権限付与は不要。**
+
+これは Cloud Run サービスそのものと同じ構図で、
+[ADR 0008](0008-scoped-credentials.md)「dev の Cloud Run サービスを増やすときの手順」の
+**初回だけ広い権限の人が作る**というパターンがそのまま当てはまる。
+リージョンごとに1つなので、この作成はプロジェクトで実質1回きり。
+
+> 教訓: 「権限エラーが出た」から「権限の恒久的な付与が要る」を導かないこと。
+> リソースが存在しないことによる作成権限の不足なのか、
+> 既存リソースへのアクセス権限の不足なのかで、対応がまったく変わる。
 
 ## 理由
 
