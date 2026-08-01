@@ -1,4 +1,4 @@
-# ADR 0011: main.py / etl_to_bq.py の責務分割
+# ADR 0012: main.py / etl_to_bq.py の責務分割
 
 - ステータス: 採用
 - 日付: 2026-08-01
