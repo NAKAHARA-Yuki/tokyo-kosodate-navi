@@ -6,18 +6,10 @@
 
 import pytest
 
-from etl_to_bq import (
-    _clean_codes,
-    build_benefit_edges,
-    canonical_document_name,
-    compute_age_bounds,
-    extract_links,
-    looks_like_document,
-    normalize_date,
-    normalize_time,
-    normalize_zip,
-    split_belongings,
-)
+from etl_documents import canonical_document_name, looks_like_document, split_belongings
+from etl_graph import build_benefit_edges
+from etl_normalize import extract_links, normalize_date, normalize_time, normalize_zip
+from etl_statuses import _clean_codes, compute_age_bounds
 
 
 class TestNormalizeDate:

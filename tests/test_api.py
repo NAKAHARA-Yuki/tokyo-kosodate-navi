@@ -301,7 +301,7 @@ class TestDraftReview:
     @pytest.mark.parametrize("mode", ["explain", "review"])
     def test_prompt_forbids_inventing_facts(self, client, bq, monkeypatch, mode):
         """LLM に制度情報にないことを補わせない指示が必ず入っていること。"""
-        import main
+        import dependencies
 
         captured = {}
 
@@ -318,7 +318,7 @@ class TestDraftReview:
             def __init__(self, **kwargs):
                 self.models = FakeModels()
 
-        monkeypatch.setattr(main, "_build_genai_client", lambda: FakeGenaiClient())
+        monkeypatch.setattr(dependencies, "_build_genai_client", lambda: FakeGenaiClient())
 
         bq.set_rows(
             [

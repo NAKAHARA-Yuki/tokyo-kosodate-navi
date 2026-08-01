@@ -35,19 +35,22 @@
 ## 構成
 
 ```
-src/            ETL とグラフ構築（ローカル or CI から実行）
-  etl_to_bq.py    レジストリJSON取得 → 整形 → BigQueryロード
+src/            ETL とグラフ構築（ローカル or CI から実行）。etl_to_bq.py はエントリポイントで、
+                 実処理は etl_util/etl_normalize/etl_documents/etl_statuses/etl_graph/etl_schema/etl_load に分割
   age_rules.py    対象年齢をテキストから推定するルール（正規表現のみ）
   create_graph.sql/.py  PROPERTY GRAPH 定義
   verify_graph.py 動作検証クエリ
-app/            Cloud Run で動く FastAPI アプリ
+app/            Cloud Run で動く FastAPI アプリ。main.py はルーター登録のみで、
+                 実処理は routers/（benefits/match/timeline/support）に分割
   config.py       環境（dev/staging/prod）ごとの設定。ETL からも参照する
-  main.py         API 本体
+  dependencies.py BigQuery / Gemini クライアントの生成
   templates/index.html  フロントエンド（素のJS + cytoscape.js。Next.jsではない）
 tests/          ユニット・API結合テスト（BigQuery はモック）
 e2e/            Playwright による画面操作テスト
 docs/           設計ドキュメントと ADR
 ```
+
+ファイルごとの詳細な責務は [docs/architecture.md](docs/architecture.md) を参照。
 
 ## 環境（dev / staging / prod）
 

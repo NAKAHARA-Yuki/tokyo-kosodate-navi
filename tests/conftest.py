@@ -61,11 +61,15 @@ class FakeBigQueryClient:
 
 @pytest.fixture
 def bq(monkeypatch):
-    """main.get_client() が返す BigQuery クライアントを差し替える。"""
-    import main
+    """dependencies.get_client() が返す BigQuery クライアントを差し替える。
+
+    各ルーターは `dependencies.get_client()` とモジュール経由で呼ぶ約束になっているため、
+    ここも dependencies モジュールの属性を差し替える（app/dependencies.py 参照）。
+    """
+    import dependencies
 
     fake = FakeBigQueryClient()
-    monkeypatch.setattr(main, "get_client", lambda: fake)
+    monkeypatch.setattr(dependencies, "get_client", lambda: fake)
     return fake
 
 
