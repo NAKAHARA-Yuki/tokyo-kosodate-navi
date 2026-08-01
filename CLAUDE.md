@@ -75,23 +75,6 @@ GitHub の操作は `gh` を使う（`~/.git-credentials` のトークンを実�
 
 `make help` で一覧。`ENV=` で環境を指定する（既定は dev）。
 
-```bash
-make setup                # 仮想環境・依存関係・Playwright
-make lint                 # ruff check + format --check
-make fmt                  # 自動整形
-make test                 # ユニット・API結合テスト（GCP不要）
-make e2e                  # E2E（スタブ版アプリを自動起動。GCP不要）
-make check                # lint + test + e2e
-make dev                  # ローカル起動 (http://localhost:8080)
-
-make etl ENV=dev          # BigQuery へデータ投入（dev のみ。staging/prod は権限で落ちる）
-make graph ENV=dev        # PROPERTY GRAPH 再作成
-make verify ENV=dev       # グラフの動作検証（読み取りなので全環境で可）
-make clone-data ENV=dev   # 本番データを dev にコピー（ETLより速い）
-make deploy               # Cloud Run の dev へデプロイ（staging/prod は不可）
-make lock                 # 本番イメージの依存を再固定（requirements.in を変えたら必須）
-```
-
 ## データモデルの要点
 
 詳細は `docs/data-model.md`。特に間違えやすい点だけここに書く。
@@ -107,34 +90,7 @@ make lock                 # 本番イメージの依存を再固定（requiremen
 
 ## 動作確認は dev の Cloud Run に出してよい
 
-**画面の確認が必要なときは `make deploy ENV=dev` で dev の Cloud Run に出すこと。**
-スマホから指示を受けて作業する場面が多く、`make dev` でローカルに立てても
-利用者からは見えない。URL を返せる形にする。
-
-```bash
-make deploy ENV=dev       # dev の Cloud Run へ（回数制限なし。自由に使ってよい）
-make url ENV=dev          # URL を確認して利用者に伝える
-```
-
-**URL はユーザーごとに分かれる**（`https://<ユーザー名>---kosodate-graph-viewer-dev-....run.app`）。
-dev の Cloud Run サービスはチームで1つを共有しているが、リビジョンタグを付けて
-`--no-traffic` で出しているため、他の人のデプロイに上書きされない。
-
-staging と prod へは権限が無く、そもそもデプロイできない。
-
-### ただし後片付けはすること
-
-確認のたびに Cloud Run のリビジョンが増え、BigQuery には検証用テーブルが残る。
-放置すると「どれが今の状態か」が分からなくなる。
-
-```bash
-make cleanup              # 古いリビジョンと検証用テーブルを消す
-```
-
-- 確認が終わったら `make cleanup` を実行する
-- 検証用に作ったテーブルは `benefits` などの正規8テーブル以外の名前にする
-  （`make cleanup` が正規テーブル以外を消す判定をしている）
-- Artifact Registry のイメージは権限が無く消せない。溜まったら管理者に伝える
+画面の確認が必要なときの手順（デプロイ・URL の伝え方・後片付け）は `deploy-dev` スキルを参照。
 
 ## 落とし穴（踏んだもの）
 
@@ -168,7 +124,6 @@ make cleanup              # 古いリビジョンと検証用テーブルを消�
 
 - **コミットのメールアドレスは GitHub の noreply を使う**（`<数字>+<ユーザー名>@users.noreply.github.com`）。
   リポジトリは public なので、実アドレスを設定すると履歴として公開される。
-- コメントは「なぜそうしたか」を書く。何をしているかはコードを読めば分かる。
 - 日本語のコメント・ドキュメントで統一（チームの共通言語）。
 - 推測でモデル名やAPIの仕様を書かない。動かして確かめてから書く。
 - 本番データを触る操作（`make etl` など）は影響を明示してから実行する。
