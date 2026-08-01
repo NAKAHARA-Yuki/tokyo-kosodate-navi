@@ -199,7 +199,6 @@ agent-up: ## Claude Code 用のコンテナを起動する（サーバー常駐�
 		fi; \
 		exit 1; \
 	fi
-	@$(COMPOSE) exec -u root agent bash /workspace/docker/init-firewall.sh
 	@echo ""
 	@echo "✅ コンテナを起動しました（サーバー再起動後も自動で上がります）"
 	@echo ""
@@ -248,10 +247,6 @@ agent-shell: ## コンテナに入る（この中で claude を起動する）
 .PHONY: agent-down
 agent-down: ## コンテナを止める
 	$(COMPOSE) down
-
-.PHONY: agent-firewall
-agent-firewall: ## 外向き通信の許可リストを入れ直す（宛先のIPが変わったとき）
-	$(COMPOSE) exec -u root agent bash /workspace/docker/init-firewall.sh
 
 .PHONY: cleanup
 cleanup: ## dev に溜まった動作確認の跡を片付ける（リビジョン・検証用テーブル）

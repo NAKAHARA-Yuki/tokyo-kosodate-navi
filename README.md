@@ -61,7 +61,7 @@ make check                               # lint + テスト + E2E
 ```
 
 コンテナ内では **sudo を含めて自由に操作**でき、壊しても作り直せます。
-GCP アクセスは dev 限定、外向き通信は許可リストのみ、ホストからは隔離されています。
+GCP アクセスは dev 限定で、ホストからは隔離されています。
 
 Claude Code をサーバーに常駐させてスマホから使う手順は
 [docs/onboarding.md](docs/onboarding.md) を参照してください。
