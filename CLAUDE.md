@@ -130,6 +130,12 @@ GitHub の操作は `gh` を使う（`~/.git-credentials` のトークンを実�
   `/api/subgraph` だけでなく `/api/benefits/match` の `next_steps`（`_fetch_next_steps`）も
   同じ理由で壊れていた。PROPERTY GRAPH の定義は残したまま、REQUIRES / REQUIRES_DOC /
   LEADS_TO を辿るクエリは通常SQLの JOIN に書き換えて回避した。
+- **E2E が「Playwright / Chromium が動かない」ように見えたら、まず外部通信を疑う。**
+  エージェントコンテナは許可リスト外を DROP する（REJECT ではない）ので、ブラウザは
+  エラーを返さず黙って待ち、`page.goto` のタイムアウトとしか見えない。HTML 自体は 200 で
+  返っているのに `waitUntil="load"` が発火しない、というのがこの形。
+  `page.on("response")` を張れば切り分けられる。Chromium の起動可否は
+  `p.chromium.launch()` + `set_content()` で単体で確かめること。
 
 ## コードを書くときの約束
 
@@ -137,6 +143,10 @@ GitHub の操作は `gh` を使う（`~/.git-credentials` のトークンを実�
   リポジトリは public なので、実アドレスを設定すると履歴として公開される。
 - 日本語のコメント・ドキュメントで統一（チームの共通言語）。
 - 推測でモデル名やAPIの仕様を書かない。動かして確かめてから書く。
+- **ブラウザが実行時に読むものを外部 CDN から取らない。** ライブラリは `app/static/` に
+  取り込んで自分で配り、版と sha256 を `app/static/README.md` に記録する
+  （[docs/adr/0010](docs/adr/0010-no-runtime-cdn.md)）。CDN 依存は本番のサプライチェーン
+  リスクであると同時に、エージェントコンテナの許可リストに阻まれて E2E を壊す。
 - 本番データを触る操作（`make etl` など）は影響を明示してから実行する。
 
 ## ブランチとリリース
