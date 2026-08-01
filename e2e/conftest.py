@@ -69,9 +69,12 @@ def base_url() -> str:
 
 @pytest.fixture
 def app_page(page, base_url):
-    """アプリを開き、初期表示が終わるまで待った page を返す。"""
+    """アプリを開き、初期表示が終わるまで待った page を返す。
+
+    既存画面は #12 で /debug に退避したため、そちらを開く。
+    """
     page.set_default_timeout(15_000)
-    page.goto(base_url)
+    page.goto(f"{base_url}/debug")
     # 検索結果が描画されたら初期化完了とみなす
     page.wait_for_selector(".result-item")
     return page

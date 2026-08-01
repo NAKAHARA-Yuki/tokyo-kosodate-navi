@@ -29,7 +29,7 @@ class TestInitialRender:
         errors = []
         page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
         page.on("pageerror", lambda exc: errors.append(str(exc)))
-        page.goto(base_url)
+        page.goto(f"{base_url}/debug")
         page.wait_for_selector(".result-item")
         assert errors == [], f"コンソールエラーが出ています: {errors}"
 
@@ -168,7 +168,7 @@ class TestMobileLayout:
     def mobile_page(self, page, base_url):
         page.set_viewport_size({"width": 390, "height": 844})
         page.set_default_timeout(15_000)
-        page.goto(base_url)
+        page.goto(f"{base_url}/debug")
         page.wait_for_selector(".result-item")
         return page
 
