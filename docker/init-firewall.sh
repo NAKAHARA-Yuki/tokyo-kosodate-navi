@@ -62,7 +62,7 @@ iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
 iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
 iptables -A OUTPUT -o lo -j ACCEPT
 iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-# devcontainer と VS Code の通信やホスト側との疎通のためプライベート帯は許可
+# ホスト側との疎通やコンテナ間通信のためプライベート帯は許可
 for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16; do
   iptables -A OUTPUT -d "$net" -j ACCEPT
 done

@@ -27,9 +27,25 @@ gcloud iam service-accounts add-iam-policy-binding "$SA" \
 
 echo "✅ ${MEMBER} が claude-dev を使えるようになりました"
 echo
-echo "本人に伝えること:"
-echo "  1. gcloud auth application-default login"
-echo "  2. make auth"
-echo "  3. VS Code / Cursor で「Reopen in Container」"
+echo "─────────────────────────────────────────────"
+echo " サーバー管理者の作業（まだの場合）"
+echo "─────────────────────────────────────────────"
+echo "  sudo adduser <ユーザー名>              # Linux ユーザーを作る"
+echo "  sudo usermod -aG docker <ユーザー名>   # 無いと make agent-up が権限エラー"
+echo "  （追加後、本人が一度ログインし直す必要があります）"
+echo
+echo "─────────────────────────────────────────────"
+echo " 本人に伝えること"
+echo "─────────────────────────────────────────────"
+echo "  0. ホストに git / tmux / Docker / gcloud / Claude Code を入れる"
+echo "       docs/onboarding.md「ホスト側に入れるもの」に手順があります"
+echo "  1. GitHub の PAT を作って ~/.git-credentials に置く"
+echo "       スコープは repo と workflow の2つ（workflow を忘れると push が拒否されます）"
+echo "  2. gcloud auth application-default login"
+echo "  3. make auth      # GCP アクセスを dev だけに絞る"
+echo "  4. claude         # Claude Code にログイン"
+echo "  5. make agent-up  # コンテナを起動"
+echo
+echo "  以降は make next を打てば、その時々の次の一手が出ます。"
 echo
 echo "詳細: docs/onboarding.md"

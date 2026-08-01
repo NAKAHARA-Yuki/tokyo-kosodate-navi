@@ -15,13 +15,59 @@
 
 ## 前提
 
-- Docker（Compose v2）を実行できること
-  ```bash
-  docker ps    # 権限エラーが出るなら: sudo usermod -aG docker $USER
-  ```
-  グループ追加後は一度ログインし直してください。
 - GCP プロジェクトへのアクセス権
 - 管理者に `scripts/grant_member.sh <あなたのメール>` を実行してもらっていること
+
+## ホスト側に入れるもの
+
+コンテナの中には依存が焼き込んであるので、**ホストに要るのはこれだけ**です。
+Ubuntu / Debian 系を想定しています。
+
+```bash
+sudo apt update
+sudo apt install -y git tmux curl
+```
+
+### Docker（Compose v2 込み）
+
+```bash
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER
+```
+
+**グループ追加後は一度ログインし直してください。** 反映されていないと
+`make agent-up` が権限エラーで落ちます。
+
+```bash
+docker ps                  # エラーが出なければOK
+docker compose version     # v2 系であること
+```
+
+### gcloud CLI
+
+```bash
+curl -fsSL https://sdk.cloud.google.com | bash
+exec -l $SHELL             # PATH を反映
+gcloud version
+```
+
+### Claude Code
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+`~/.local/share/claude/versions/` に本体が入り、`~/.local/bin/claude` から使えます。
+`~/.local/bin` が PATH に無ければ通してください。
+
+```bash
+claude --version
+claude doctor              # インストールの健全性を確認できる
+```
+
+> コンテナはこのホスト側の本体をそのまま使います（read-only でマウント）。
+> **コンテナ側でのインストールは不要**で、バージョンも常にホストと一致します。
+> 更新は `claude install stable` でホスト側だけ行えば、コンテナにも反映されます。
 
 ### 1台のサーバーを複数人で使う場合
 
@@ -281,7 +327,10 @@ make check
 | E2E がブラウザのクラッシュで大量に落ちる | `/dev/shm` 不足。compose の `shm_size` を確認 |
 | `make agent-up` で port is already allocated | 他ユーザーと衝突。`.env` に `DEV_PORT=8081` |
 | コンテナ内でファイルを保存できない | uid のずれ。`make agent-down && make agent-up` で作り直す |
-| `docker ps` が権限エラー | `sudo usermod -aG docker $USER` の後、ログインし直す |
+| `docker ps` が権限エラー | `sudo usermod -aG docker $USER` の後、**ログインし直す** |
+| `claude: command not found`（ホスト） | `~/.local/bin` が PATH に無い。通すか再ログイン |
+| `gcloud: command not found` | インストール後に `exec -l $SHELL` で PATH を反映 |
+| Claude Code を更新したい | ホストで `claude install stable`。コンテナにも反映される |
 | tmux でキーを打っても反応しない | コピーモードのまま。`q` で抜ける → [tmux.md](tmux.md) |
 | tmux でスクロールできない | 仕様。`Ctrl-b` `[` でコピーモードに入る → [tmux.md](tmux.md) |
 | `make etl ENV=prod` が権限エラー | **仕様**。prod への書き込みは不可。ETL は dev で行う |

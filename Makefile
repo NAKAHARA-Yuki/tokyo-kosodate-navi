@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-# devcontainer では依存がイメージに焼き込み済みなので VENV=/usr/local で上書きする
+# 開発用コンテナでは依存がイメージに焼き込み済みなので VENV=/usr/local で上書きする
 # （そちらの bin/ に pytest や ruff が入っている）。素の環境では .venv を作って使う。
 VENV        ?= .venv
 PY          := $(VENV)/bin/python
@@ -87,25 +87,29 @@ env: ## 現在の環境設定を表示
 # ---------------------------------------------------------------- 環境構築
 
 .PHONY: setup
-setup: ## 仮想環境と依存関係を用意する（devcontainer では不要）
-	@if [ "$(VENV)" != ".venv" ]; then \
-		echo "✅ devcontainer では依存がイメージに入っているため setup は不要です"; \
-		exit 0; \
+setup: ## 仮想環境と依存関係を用意する（コンテナ内では不要）
+	@# 全体を1つのシェルにまとめている。make はレシピを行ごとに別シェルで動かすため、
+	@# if の中で exit しても次の行は実行されてしまう。分けて書くと、コンテナ内で
+	@# 「不要です」と表示した直後に /usr/local を venv 化しようとして壊す（実際に踏んだ）。
+	@set -e; \
+	if [ "$(VENV)" != ".venv" ]; then \
+		echo "✅ コンテナでは依存がイメージに入っているため setup は不要です"; \
+	else \
+		python3 -m venv $(VENV); \
+		$(PY) -m ensurepip --upgrade; \
+		$(PIP) install -q --upgrade pip; \
+		$(PIP) install -q -r requirements-dev.txt; \
+		: '--with-deps は OS パッケージを入れるため sudo が要る。CI では通るが手元では'; \
+		: 'パスワード入力できずに失敗することがある。ブラウザ本体さえ入れば E2E は動くので'; \
+		: '失敗しても setup 全体は止めず、必要なときの対処だけ案内する。'; \
+		$(VENV)/bin/playwright install --with-deps chromium \
+			|| ($(VENV)/bin/playwright install chromium \
+			    && echo "⚠️  OS依存パッケージの導入をスキップしました（sudo が必要）。" \
+			    && echo "    E2E がブラウザ起動で失敗する場合は手動で実行してください:" \
+			    && echo "    sudo $(VENV)/bin/playwright install-deps chromium"); \
+		echo ""; \
+		echo "✅ setup 完了"; \
 	fi
-	python3 -m venv $(VENV)
-	$(PY) -m ensurepip --upgrade
-	$(PIP) install -q --upgrade pip
-	$(PIP) install -q -r requirements-dev.txt
-	@# --with-deps は OS パッケージを入れるため sudo が要る。CI では通るが手元では
-	@# パスワード入力できずに失敗することがある。ブラウザ本体さえ入れば E2E は動くので、
-	@# 失敗しても setup 全体は止めず、必要なときの対処だけ案内する。
-	$(VENV)/bin/playwright install --with-deps chromium \
-		|| ($(VENV)/bin/playwright install chromium \
-		    && echo "⚠️  OS依存パッケージの導入をスキップしました（sudo が必要）。" \
-		    && echo "    E2E がブラウザ起動で失敗する場合は手動で実行してください:" \
-		    && echo "    sudo $(VENV)/bin/playwright install-deps chromium")
-	@echo ""
-	@echo "✅ setup 完了"
 	@echo ""
 	@$(MAKE) --no-print-directory next
 
@@ -133,6 +137,10 @@ export HOST_GID   := $(shell id -g)
 # 同じサーバーで複数人が make dev すると 8080 を取り合う。各自 .env で変える。
 DEV_PORT          ?= 8080
 export DEV_PORT
+
+# dev の Cloud Run に出すときのリビジョンタグ。ユーザーごとに専用 URL を得るため。
+# タグに使えるのは英小文字・数字・ハイフンだけなので、それ以外は落とす。
+DEPLOY_TAG := $(shell id -un | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-' | sed 's/-*$$//')
 
 COMPOSE := docker compose -f docker/compose.yaml
 
@@ -203,11 +211,15 @@ agent-down: ## コンテナを止める
 agent-firewall: ## 外向き通信の許可リストを入れ直す（宛先のIPが変わったとき）
 	$(COMPOSE) exec -u root agent bash /workspace/docker/init-firewall.sh
 
+.PHONY: cleanup
+cleanup: ## dev に溜まった動作確認の跡を片付ける（リビジョン・検証用テーブル）
+	$(PY) scripts/cleanup_dev.py
+
 .PHONY: lock
 lock: ## 本番イメージの依存を再固定する (app/requirements.in を変えたら必ず実行)
 	@# ロックは解決した Python のバージョンに紐づく。本番イメージは 3.12 なので、
 	@# 3.12 以外で作ると本番で入らないロックになる。
-	@# devcontainer は本番と同じ 3.12 なのでそのまま実行できる。
+	@# 開発用コンテナは本番と同じ 3.12 なのでそのまま実行できる。
 	@# それ以外の環境では docker で 3.12 を用意する（そのために docker が要る）。
 	@if [ "$$($(PY) -c 'import sys; print("%d.%d" % sys.version_info[:2])')" = "3.12" ]; then \
 		echo "Python 3.12 のためそのまま解決します"; \
@@ -262,7 +274,20 @@ dev: ## ローカルでアプリを起動する (http://localhost:8080)
 
 .PHONY: url
 url: ## デプロイ済みサービスのURLを表示する
-	@gcloud run services describe $(SERVICE) --project $(PROJECT_ID) --region $(REGION) --format='value(status.url)'
+	@# dev は複数人が同じサービスを使うので、自分のタグが付いた URL を返す。
+	@# タグが無ければ（まだデプロイしていなければ）サービス既定の URL を返す。
+	@if [ "$(ENV)" = "dev" ]; then \
+		TAGGED=$$(gcloud run services describe $(SERVICE) --project $(PROJECT_ID) --region $(REGION) \
+			--format="value(status.traffic.filter(tag:$(DEPLOY_TAG)).extract(url))" 2>/dev/null | tr -d '[]'); \
+		if [ -n "$$TAGGED" ]; then \
+			echo "$$TAGGED"; \
+		else \
+			echo "（あなたのタグはまだありません。make deploy ENV=dev で作られます）"; \
+			gcloud run services describe $(SERVICE) --project $(PROJECT_ID) --region $(REGION) --format='value(status.url)'; \
+		fi; \
+	else \
+		gcloud run services describe $(SERVICE) --project $(PROJECT_ID) --region $(REGION) --format='value(status.url)'; \
+	fi
 
 .PHONY: deploy
 deploy: ## Cloud Run の dev にデプロイする (staging/prod は GitHub Actions 経由)
@@ -278,6 +303,10 @@ deploy: ## Cloud Run の dev にデプロイする (staging/prod は GitHub Acti
 		echo "   詳細: CONTRIBUTING.md「リリース手順」"; \
 		exit 1; \
 	fi
+	@# ユーザーごとにリビジョンタグを付ける。dev の Cloud Run サービスは1つしかなく、
+	@# そのままデプロイすると後から出した人が上書きしてしまい、相手の URL に
+	@# 自分のコードが出る。タグを付ければ同じサービスのまま専用 URL が生える。
+	@# --no-traffic なので、既定の URL は他の人のデプロイに影響されない。
 	gcloud run deploy $(SERVICE) \
 		--source ./app \
 		--project $(PROJECT_ID) \
@@ -285,7 +314,12 @@ deploy: ## Cloud Run の dev にデプロイする (staging/prod は GitHub Acti
 		--allow-unauthenticated \
 		--set-env-vars GCP_PROJECT_ID=$(PROJECT_ID),APP_ENV=$(ENV) \
 		--memory 512Mi --cpu 1 --min-instances 0 --max-instances 3 --timeout 120 \
+		--tag $(DEPLOY_TAG) --no-traffic \
 		--quiet
+	@echo ""
+	@echo "✅ あなた専用の URL に出しました（他の人のデプロイに上書きされません）"
+	@echo ""
+	@$(MAKE) --no-print-directory url ENV=$(ENV)
 
 # ---------------------------------------------------------------- データパイプライン
 
