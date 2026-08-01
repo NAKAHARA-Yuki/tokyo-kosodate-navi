@@ -28,10 +28,8 @@ services:
     # Chromium は共有メモリを多く使う。docker の既定 64MB では E2E が
     # ブラウザのクラッシュで大量に落ちる（22件中20件がエラーになった）。
     shm_size: 1gb
-    # 外向き通信を許可リストに絞るため（init-firewall.sh が iptables を触る）
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
+    # 追加の capability は渡さない。以前は外向き通信を絞るために NET_ADMIN / NET_RAW を
+    # 付けていたが、その仕組みごとやめた（ADR 0011）。
     environment:
       # 依存はイメージに焼き込み済み。.venv を作らずそちらを使う
       VENV: /usr/local

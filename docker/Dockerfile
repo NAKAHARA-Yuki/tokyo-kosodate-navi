@@ -16,7 +16,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl gnupg git make sudo less procps \
         tmux ripgrep jq \
-        iptables ipset dnsutils \
+        dnsutils \
     && rm -rf /var/lib/apt/lists/*
 
 # gcloud / bq（ETL とデプロイの確認に使う）

@@ -292,7 +292,7 @@ claude --dangerously-skip-permissions --remote-control kosodate
 フラグを付けている限り、書いても何も変わりません。
 
 > **このコマンドはコンテナの中でだけ使ってください。**
-> 中でなら壊しても作り直せますし、GCP は dev しか触れず、外向き通信も許可リストに限られます。
+> 中でなら壊しても作り直せますし、GCP は dev しか触れません。
 > **ホストで同じことをすると、ファイル全体と本人の GCP 権限が対象になります。**
 >
 > 今どちらにいるかは、プロンプトで見分けられます。
@@ -327,7 +327,6 @@ ssh server
 ```bash
 make agent-down      # 止める
 make agent-up        # 作り直す（イメージも更新される）
-make agent-firewall  # 通信の許可リストを入れ直す（繋がらなくなったとき）
 ```
 
 ## 手元で開発する
@@ -359,14 +358,18 @@ make check
 - **本番と同じ Python 3.12**、依存もブラウザもイメージに焼き込み済み（`make setup` 不要）
 - **GCP アクセスは dev 限定**（staging / prod は読み取りのみ）
 - **ホストマシンから隔離**（docker ソケットを渡していない）
-- **外向き通信は許可リストのみ**（Google / GitHub / PyPI / Anthropic）
 
 ### 何が保証されないか
 
-コンテナ内の利用者は sudo を持つので、その気になれば firewall も消せます。
-**事故と自動化の暴走を防ぐ層であって、意図的な回避を防ぐものではありません。**
+**外向き通信は絞っていません。** 以前は許可リストで絞っていましたが、
+効果より害が大きかったため撤回しました（[ADR 0011](adr/0011-drop-egress-allowlist.md)）。
 
-またホスト側であなた自身の GCP 認証を直接使えば、権限どおりのことができます。
+被害範囲を押さえているのは通信ではなく**認証のスコープ**です。
+コンテナ内の GCP 認証は dev しか書けないので、事故っても staging / prod は無事です。
+逆に言えば、**`make auth` を通さずにホストの認証を直接使うと、その守りが無くなります。**
+
+またコンテナ内の利用者は sudo を持ちます。
+**事故と自動化の暴走を防ぐ層であって、意図的な回避を防ぐものではありません。**
 
 詳細は [ADR 0008](adr/0008-scoped-credentials.md) と [ADR 0009](adr/0009-agent-container.md)。
 
@@ -376,8 +379,6 @@ make check
 |---|---|
 | `make auth` が権限エラー | `serviceAccountTokenCreator` 未付与。管理者に依頼 |
 | `make agent-up` が認証エラーで止まる | `make auth` か `claude` のログインが未実施 |
-| コンテナ内から外部サイトに繋がらない | 許可リスト外。必要なら `docker/init-firewall.sh` に足して PR |
-| 前は繋がったのに繋がらない | 許可リストは起動時に IP を解決している。`make agent-firewall` |
 | E2E がブラウザのクラッシュで大量に落ちる | `/dev/shm` 不足。compose の `shm_size` を確認 |
 | `make agent-up` で port is already allocated | 他ユーザーと衝突。`.env` に `DEV_PORT=8081` |
 | コンテナ内でファイルを保存できない | uid のずれ。`make agent-down && make agent-up` で作り直す |

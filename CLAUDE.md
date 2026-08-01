@@ -71,8 +71,11 @@ staging へ反映したいなら main へマージ、prod なら `v*.*.*` タグ
 
 開発は `docker/compose.yaml` のコンテナ内で行うのが正（`make agent-up` → `make agent-shell`）。
 Python は本番と同じ 3.12 で、依存も Playwright もイメージに焼き込み済み
-（`make setup` 不要、`VENV=/usr/local`）。コンテナ内は sudo 可・ホストからは隔離・
-外向き通信は許可リストのみ（[docs/adr/0009](docs/adr/0009-agent-container.md)）。
+（`make setup` 不要、`VENV=/usr/local`）。コンテナ内は sudo 可・ホストからは隔離
+（[docs/adr/0009](docs/adr/0009-agent-container.md)）。外向き通信は絞っていない
+（許可リストは効果より害が大きく撤回した。[docs/adr/0011](docs/adr/0011-drop-egress-allowlist.md)）。
+**被害範囲を押さえているのは通信ではなく認証のスコープ**なので、
+`make auth` を通さずに GCP を触らないこと。
 docker ソケットは渡していないので、コンテナ内から docker は使えない。
 GitHub の操作は `gh` を使う（`~/.git-credentials` のトークンを実行時に読むので
 ログイン不要。トークンをユーザーに要求しないこと）。
@@ -133,10 +136,10 @@ GitHub の操作は `gh` を使う（`~/.git-credentials` のトークンを実�
   `/api/subgraph` だけでなく `/api/benefits/match` の `next_steps`（`_fetch_next_steps`）も
   同じ理由で壊れていた。PROPERTY GRAPH の定義は残したまま、REQUIRES / REQUIRES_DOC /
   LEADS_TO を辿るクエリは通常SQLの JOIN に書き換えて回避した。
-- **E2E が「Playwright / Chromium が動かない」ように見えたら、まず外部通信を疑う。**
-  エージェントコンテナは許可リスト外を DROP する（REJECT ではない）ので、ブラウザは
-  エラーを返さず黙って待ち、`page.goto` のタイムアウトとしか見えない。HTML 自体は 200 で
-  返っているのに `waitUntil="load"` が発火しない、というのがこの形。
+- **E2E が「Playwright / Chromium が動かない」ように見えたら、サブリソースの取得を疑う。**
+  `page.goto` は `waitUntil="load"` で全サブリソースを待つため、1つでも取れないと
+  HTML 自体が 200 で返っていてもタイムアウトする。エラーは「タイムアウト」としか
+  言わないので、ブラウザ側の制約に見えてしまう（実際に誤診したことがある）。
   `page.on("response")` を張れば切り分けられる。Chromium の起動可否は
   `p.chromium.launch()` + `set_content()` で単体で確かめること。
 
@@ -148,8 +151,8 @@ GitHub の操作は `gh` を使う（`~/.git-credentials` のトークンを実�
 - 推測でモデル名やAPIの仕様を書かない。動かして確かめてから書く。
 - **ブラウザが実行時に読むものを外部 CDN から取らない。** ライブラリは `app/static/` に
   取り込んで自分で配り、版と sha256 を `app/static/README.md` に記録する
-  （[docs/adr/0010](docs/adr/0010-no-runtime-cdn.md)）。CDN 依存は本番のサプライチェーン
-  リスクであると同時に、エージェントコンテナの許可リストに阻まれて E2E を壊す。
+  （[docs/adr/0010](docs/adr/0010-no-runtime-cdn.md)）。第三者のホストが返したものを
+  無検証で実行するのは、本番の依存をハッシュで固定している方針（ADR 0007）と矛盾する。
 - 本番データを触る操作（`make etl` など）は影響を明示してから実行する。
 
 ## ブランチとリリース
