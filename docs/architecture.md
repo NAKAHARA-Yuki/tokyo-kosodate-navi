@@ -109,7 +109,8 @@ backend へは ID トークン付きでサーバサイドから呼ぶ（ADR 0013
 |---|---|
 | `frontend/lib/backend.ts` | backend を ID トークン付きで呼ぶ共通ヘルパー |
 | `frontend/app/api/[...path]/route.ts` | backend への catch-all プロキシ（ブラウザから同一オリジンで叩けるようにする） |
-| `frontend/app/page.tsx` | 現時点では疎通確認用の最小ページ（本物のトップページは後続PRで実装） |
+| `frontend/components/dads/` | [デジタル庁デザインシステム](https://design.digital.go.jp/dads/react/)のコンポーネント（npm未公開のため個別コピー。詳細は `frontend/README.md`） |
+| `frontend/app/page.tsx` | 現時点では疎通確認 + デザインシステム導入確認用の最小ページ（本物のトップページは後続PRで実装） |
 
 移行が完了するまでの間、既存画面（`app/templates/index.html`、cytoscape.js）は
 backend の `/debug` に残っている。`/` は新画面のための仮プレースホルダー（issue #12）。
