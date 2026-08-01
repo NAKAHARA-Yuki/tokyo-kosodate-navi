@@ -13,6 +13,8 @@ SHELL := /bin/bash
 # （そちらの bin/ に pytest や ruff が入っている）。素の環境では .venv を作って使う。
 VENV        ?= .venv
 PY          := $(VENV)/bin/python
+# .venv がまだ無い段階（make auth）でも動かせるようにフォールバックする
+AUTH_PY     := $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
 PIP         := $(VENV)/bin/pip
 PROJECT_ID  ?= opendatahackathon-503500
 REGION      := asia-northeast1
@@ -129,7 +131,9 @@ auth: ## Claude Code 経由の GCP アクセスを claude-dev に切り替える
 		echo "   gcloud auth application-default login"; \
 		exit 1; \
 	fi
-	$(PY) scripts/setup_scoped_adc.py
+	@# make auth は make setup より前に実行される手順なので、.venv があるとは限らない。
+	@# スクリプト本体は標準ライブラリだけで動くため、無ければ system の python3 を使う。
+	$(AUTH_PY) scripts/setup_scoped_adc.py
 	@echo ""
 	@$(MAKE) --no-print-directory next
 

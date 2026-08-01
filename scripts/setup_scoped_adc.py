@@ -64,6 +64,15 @@ probe = subprocess.run(
     text=True,
     env={**os.environ, "GOOGLE_APPLICATION_CREDENTIALS": OUT},
 )
+
+# make auth は make setup より前に実行される手順なので、依存がまだ入っていないことがある。
+# その場合は権限の問題ではないので、設定は残したうえで確認だけ諦める。
+if "ModuleNotFoundError" in probe.stderr and "google" in probe.stderr:
+    print(f"✅ {OUT} を作成しました")
+    print("   （依存がまだ入っていないため、実際に使えるかの確認は省略しました）")
+    print("   コンテナを起動すれば確認できます: make agent-up")
+    sys.exit(0)
+
 if probe.returncode != 0:
     stderr = probe.stderr.strip()
     detail = stderr.splitlines()[-1] if stderr else "(詳細なし)"
