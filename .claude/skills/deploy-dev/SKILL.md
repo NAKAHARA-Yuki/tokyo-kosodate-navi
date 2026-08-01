@@ -3,22 +3,33 @@ name: deploy-dev
 description: dev の Cloud Run に出して画面の動作を確認し、確認後に後片付けする。「動作確認して」「画面を見せて」「dev にデプロイして」のように、実際にアプリの画面を見る必要があるときに使う。
 ---
 
-**画面の確認が必要なときは `make deploy ENV=dev` で dev の Cloud Run に出すこと。**
-スマホから指示を受けて作業する場面が多く、`make dev` でローカルに立てても
-利用者からは見えない。URL を返せる形にする。
+**画面の確認が必要なときは dev の Cloud Run に出すこと。**
+スマホから指示を受けて作業する場面が多く、ローカルに立てても利用者からは見えない。
+URL を返せる形にする。
+
+**画面は frontend（Next.js）が持つ**ので、画面を見せるときは frontend 側を出す。
+backend（FastAPI）は API 専用で HTML を返さない（issue #33 / ADR 0013）。
 
 ```bash
-make deploy ENV=dev       # dev の Cloud Run へ（回数制限なし。自由に使ってよい）
-make url ENV=dev          # URL を確認して利用者に伝える
+make deploy-frontend ENV=dev   # frontend（画面）を dev へ
+make url-frontend ENV=dev      # 画面の URL を確認して利用者に伝える
+
+make deploy ENV=dev            # backend（API）を dev へ。API を変えたときはこちらも
+make url ENV=dev               # backend の URL
 ```
 
-**URL はユーザーごとに分かれる**（`https://<ユーザー名>---kosodate-graph-viewer-dev-....run.app`）。
+frontend は backend を環境変数 `BACKEND_URL` で見る。**backend 側の変更を画面から
+確認したいときは、backend を先にデプロイしてから frontend を出す**（`make deploy-frontend`
+が最新の backend URL を読んで渡す）。
+
+**URL はユーザーごとに分かれる**（`https://<ユーザー名>---kosodate-frontend-dev-....run.app`）。
 dev の Cloud Run サービスはチームで1つを共有しているが、リビジョンタグを付けて
 `--no-traffic` で出しているため、他の人のデプロイに上書きされない。
+**サービスの既定 URL には出ないので、必ずタグ付き URL で確認すること。**
 
-**画面を見せるときは URL の末尾に `/debug` を付けること。** `/` は新しい画面のための
-仮プレースホルダーで、既存の動作確認用画面（cytoscape.js のグラフ表示）は `/debug` に
-退避している（issue #12）。
+見せる画面:
+- `/` — トップページ（制度の一覧ビュー）
+- `/debug` — 既存の cytoscape.js のグラフ画面（移行期間中の動作確認用）
 
 staging と prod へは権限が無く、そもそもデプロイできない。
 
