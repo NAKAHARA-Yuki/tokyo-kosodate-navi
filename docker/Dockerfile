@@ -36,6 +36,22 @@ RUN curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
 # docker CLI は入れない。ソケットを渡さない方針のため使えないし、
 # make lock はこのイメージが本番と同じ 3.12 なのでそのまま解決できる。
 
+# Node.js。フロントエンドを Next.js の別サービスに分けるため（issue #33 / ADR 0013）。
+#
+# Debian bookworm の nodejs は 18 系で、現行の Next.js には古い。
+# NodeSource から現行 LTS の 24.x を入れる。メジャーを固定しているのは、
+# イメージのビルド時期でメジャーが変わると「手元では動くのに他の人の環境で落ちる」ため。
+#
+# 本番のフロント用イメージはこれとは別に作る。ここに入れるのは開発作業のためだけ。
+RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+        | gpg --dearmor -o /usr/share/keyrings/nodesource.gpg \
+    && chmod go+r /usr/share/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_24.x nodistro main" \
+        > /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
 # GitHub CLI。issue や PR の作成には API を叩く必要があり、git push だけでは足りない。
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
         -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
