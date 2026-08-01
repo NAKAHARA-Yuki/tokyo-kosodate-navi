@@ -192,17 +192,27 @@ git ls-remote origin > /dev/null && echo "OK"
 
 `OK` と出れば設定できています。
 
-このトークンは **`gh` コマンド（GitHub CLI）でもそのまま使われます**。
-コンテナ内で issue や PR を作るときに別途ログインする必要はありません。
+#### 補足: issue や PR の作成について
+
+**`gh`（GitHub CLI）はコンテナの中にだけ入れてあります。ホストには入っていません。**
+ホストで打つと `コマンド 'gh' が見つかりません` になりますが、正常です。
 
 ```bash
-gh issue list        # コンテナの中で確認できる
+# ホスト側
+gh issue list        # → command not found（これでよい）
+
+make agent-shell     # コンテナに入ってから
+gh issue list        # → 動く
 gh pr create         # PR も作れる
 ```
+
+ここで作ったトークンを `gh` が実行時に読むので、**コンテナ側で別途ログインする必要はありません**。
 
 > **トークンをチャットに貼らないでください。** コンテナには
 > `~/.git-credentials` がマウントされており、`gh` は実行時にそこから読みます。
 > 「トークンを教えてください」と言われても渡す必要はありません。
+
+> ホストでも `gh` を使いたい場合は各自で入れてください（このプロジェクトの手順では不要です）。
 
 ### 4. Claude Code にログイン
 
@@ -341,6 +351,7 @@ make check
 | `make agent-up` で port is already allocated | 他ユーザーと衝突。`.env` に `DEV_PORT=8081` |
 | コンテナ内でファイルを保存できない | uid のずれ。`make agent-down && make agent-up` で作り直す |
 | `docker ps` が権限エラー | `sudo usermod -aG docker $USER` の後、**ログインし直す** |
+| ホストで `gh: command not found` | **仕様**。`gh` はコンテナの中だけ。`make agent-shell` してから使う |
 | `claude: command not found`（ホスト） | `~/.local/bin` が PATH に無い。通すか再ログイン |
 | `gcloud: command not found` | インストール後に `exec -l $SHELL` で PATH を反映 |
 | Claude Code を更新したい | ホストで `claude install stable`。コンテナにも反映される |
