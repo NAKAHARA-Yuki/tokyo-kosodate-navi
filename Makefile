@@ -146,8 +146,21 @@ export AGENT_USER := $(shell id -un)
 # リポジトリや ~/.claude に書き込めない（uid 1000 の人だけ動いて他は詰まる）。
 export HOST_UID   := $(shell id -u)
 export HOST_GID   := $(shell id -g)
-# 同じサーバーで複数人が make dev すると 8080 を取り合う。各自 .env で変える。
-DEV_PORT          ?= 8080
+# 同じサーバーで複数人が使うと 8080 を取り合うので、空いている番号を自動で選ぶ。
+#
+# 既に自分のコンテナが動いていれば、その番号をそのまま使う。
+# 毎回選び直すと URL が変わるうえ、ポートが変わるとコンテナも作り直しになるため。
+#
+# .env に DEV_PORT を書けばそちらが優先される（?= のため）。
+# コマンドラインの指定（make agent-up DEV_PORT=9000）はさらに優先される。
+AUTO_DEV_PORT := $(shell \
+	mine=$$(docker port kosodate-agent-$$(id -un) 8080 2>/dev/null | head -1 | sed 's/.*://'); \
+	if [ -n "$$mine" ]; then echo "$$mine"; else \
+		for p in $$(seq 8080 8099); do \
+			if ! ss -ltn 2>/dev/null | grep -qE ":$$p[[:space:]]"; then echo "$$p"; break; fi; \
+		done; \
+	fi)
+DEV_PORT          ?= $(if $(AUTO_DEV_PORT),$(AUTO_DEV_PORT),8080)
 export DEV_PORT
 
 # dev の Cloud Run に出すときのリビジョンタグ。ユーザーごとに専用 URL を得るため。
@@ -168,7 +181,24 @@ agent-up: ## Claude Code 用のコンテナを起動する（サーバー常駐�
 	@test -f "$(HOME)/.git-credentials" \
 		|| { echo "❌ GitHub の認証情報がありません（~/.git-credentials）"; \
 		     echo "   docs/onboarding.md「GitHub の初期設定」を参照してください"; exit 1; }
-	$(COMPOSE) up -d --build
+	@# 失敗したときに何をすればいいかまで出す。1台を複数人で使うと必ずポートが衝突し、
+	@# docker の "port is already allocated" だけでは対処が分からない。
+	@if ! $(COMPOSE) up -d --build; then \
+		echo ""; \
+		if ss -ltn 2>/dev/null | grep -qE ":$(DEV_PORT)\s"; then \
+			echo "───────────────────────────────────────────────"; \
+			echo " ポート $(DEV_PORT) は既に使われています"; \
+			echo "───────────────────────────────────────────────"; \
+			echo "  同じサーバーの他の人が使っている可能性があります。"; \
+			echo "  空いている番号に変えてください（リポジトリ直下で実行）:"; \
+			echo ""; \
+			echo "      echo \"DEV_PORT=8081\" >> .env"; \
+			echo "      make agent-up"; \
+			echo ""; \
+			echo "  .env は git 管理外なので、他の人には影響しません。"; \
+		fi; \
+		exit 1; \
+	fi
 	@$(COMPOSE) exec -u root agent bash /workspace/docker/init-firewall.sh
 	@echo ""
 	@echo "✅ コンテナを起動しました（サーバー再起動後も自動で上がります）"

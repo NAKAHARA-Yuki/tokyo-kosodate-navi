@@ -13,6 +13,25 @@
 - サーバーに常駐させてスマホから指示を送る → [サーバーで常駐させる](#サーバーで常駐させる)
 - 自分のマシンで普通に開発する → [手元で開発する](#手元で開発する)
 
+## ホストとコンテナ、どちらで打つのか
+
+**この2つを取り違えるのが一番よくある詰まりです。** 迷ったらここに戻ってください。
+
+| 打つ場所 | 何をするところ |
+|---|---|
+| **ホスト** | 環境構築（`make auth` / `make agent-up`）と tmux |
+| **コンテナの中** | 実際の開発。`claude` / `make check` / `make dev` / `gh` |
+
+`make agent-shell` を境に、それより後はコンテナの中です。
+今どちらにいるかはプロンプトで分かります。
+
+```
+claude-code@Sibelius:~/dev/projects/tokyo-kosodate-navi$   ← ホスト
+dev@ad7af3ed38b2:/workspace$                               ← コンテナの中
+```
+
+`make next` はどちらで打っても、その場所に応じた案内を出します。
+
 ## 前提
 
 - GCP プロジェクトへのアクセス権
@@ -77,24 +96,8 @@ claude doctor              # インストールの健全性を確認できる
 コンテナ内のユーザーはホストの uid / gid に合わせて作られます。合わせないと
 bind mount したリポジトリや `~/.claude` に書き込めず、**uid 1000 の人以外が詰まります**。
 
-ポートだけは自動で分けられないので、2人目以降は変えてください。
-
-**ホスト側で、自分のクローンのリポジトリ直下**（`Makefile` があるディレクトリ）に
-`.env` を作ります。コンテナの中ではありません。
-
-```bash
-cd tokyo-kosodate-navi        # リポジトリ直下
-echo "DEV_PORT=8081" >> .env  # 8081 は空いている番号なら何でもよい
-make agent-down && make agent-up   # 起動中なら作り直すと反映される
-```
-
-`.env` は git 管理外なので、他の人に影響しません。
-
-確認するには `make next` を打ってください。コンテナの中で
-`make dev アプリを起動 (http://localhost:8081)` のように出ます。
-
-> 一時的に変えたいだけなら `make agent-up DEV_PORT=8081` でも構いません
-> （コマンドラインの指定が `.env` より優先されます）。
+**ポートも自動で空いている番号が選ばれます**（8080 から順に探します）。
+一度起動したあとは同じ番号を使い続けるので、URL が変わることはありません。
 
 ## 共通の初期設定（ホスト側で1度だけ）
 
@@ -192,17 +195,27 @@ git ls-remote origin > /dev/null && echo "OK"
 
 `OK` と出れば設定できています。
 
-このトークンは **`gh` コマンド（GitHub CLI）でもそのまま使われます**。
-コンテナ内で issue や PR を作るときに別途ログインする必要はありません。
+#### 補足: issue や PR の作成について
+
+**`gh`（GitHub CLI）はコンテナの中にだけ入れてあります。ホストには入っていません。**
+ホストで打つと `コマンド 'gh' が見つかりません` になりますが、正常です。
 
 ```bash
-gh issue list        # コンテナの中で確認できる
+# ホスト側
+gh issue list        # → command not found（これでよい）
+
+make agent-shell     # コンテナに入ってから
+gh issue list        # → 動く
 gh pr create         # PR も作れる
 ```
+
+ここで作ったトークンを `gh` が実行時に読むので、**コンテナ側で別途ログインする必要はありません**。
 
 > **トークンをチャットに貼らないでください。** コンテナには
 > `~/.git-credentials` がマウントされており、`gh` は実行時にそこから読みます。
 > 「トークンを教えてください」と言われても渡す必要はありません。
+
+> ホストでも `gh` を使いたい場合は各自で入れてください（このプロジェクトの手順では不要です）。
 
 ### 4. Claude Code にログイン
 
@@ -213,26 +226,8 @@ claude          # 初回はログインを求められる
 コンテナはホストの Claude Code 本体と認証をそのまま使います。
 インストールもログインもコンテナ側では不要です。
 
-### 5. 承認について
-
-Claude Code に作業を任せて離席するなら、起動時にこのフラグを付けます。
-**設定ファイルは要りません。**
-
-```bash
-claude --dangerously-skip-permissions --remote-control kosodate
-```
-
-`--dangerously-skip-permissions` が承認を全て省きます。
-`.claude/settings.local.json` に allow リストを書く必要はありません
-（フラグを付けている限り、書いても何も変わりません）。
-
-**必ずコンテナの中で使ってください。** 中でなら壊しても作り直せますし、
-GCP は dev しか触れず、外向き通信も許可リストに限られています。
-ホストで同じことをすると、ファイル全体と本人の GCP 権限が対象になります。
-
-> フラグを付け忘れると、承認待ちで止まったまま進みません。
-> スマホから見ていると気づきにくいので、`make agent-shell` の案内に出る
-> コマンドをそのままコピーして使ってください。
+ホスト側の初期設定はここまでです。**ホストで `claude` を使うのはこのログインだけ**で、
+実際の作業はすべてコンテナの中で行います。
 
 ## サーバーで常駐させる
 
@@ -245,7 +240,29 @@ Claude Code を立ち上げっぱなしにしておくと、スマホの Claude 
 make agent-up        # ビルド + 起動 + 通信制限の適用
 ```
 
+初回はイメージのビルドで数分かかります。
 `restart: unless-stopped` なので、**サーバーを再起動しても自動で上がります**。
+
+#### ポートについて
+
+**特に何もしなくて構いません。** 1台のサーバーを複数人で使う場合、
+8080 から順に空いている番号が自動で選ばれます。
+
+一度起動したあとは、その番号を使い続けます（毎回選び直すと URL が変わってしまうため）。
+自分が使っている番号は `make next` で確認できます。
+
+```
+make dev       アプリを起動 (http://localhost:8081)
+```
+
+番号を指定したい場合は `.env` に書きます（**ホスト側・リポジトリ直下**）。
+
+```bash
+echo "DEV_PORT=9000" >> .env
+```
+
+> `.env` は git 管理外なので、他の人には影響しません。
+> 一度だけ試したいなら `make agent-up DEV_PORT=9000` でも構いません。
 
 ### 入って Claude Code を起動する
 
@@ -255,14 +272,38 @@ tmux は**ホスト側**で回します。コンテナを作り直しても tmux
 tmux new -s claude                      # 初回
 # 以降は tmux attach -t claude
 
-make agent-shell                        # コンテナに入る
+make agent-shell                        # ← ここからコンテナの中
 
-# 承認なしで動かす。--remote-control を付けると Claude アプリから接続できる
+# 以下はコンテナの中で打つ
 claude --dangerously-skip-permissions --remote-control kosodate
 ```
 
 `Ctrl-b` を押して離してから `d` を押すと tmux から抜けられます。
 **抜けても Claude Code は動き続けます。** これが tmux を使う理由です。
+
+#### 起動オプションの意味
+
+| オプション | 何をするか |
+|---|---|
+| `--dangerously-skip-permissions` | 承認を全て省く。作業を任せて離席できる |
+| `--remote-control kosodate` | スマホの Claude アプリから接続できるようにする |
+
+`.claude/settings.local.json` に allow リストを書く必要はありません。
+フラグを付けている限り、書いても何も変わりません。
+
+> **このコマンドはコンテナの中でだけ使ってください。**
+> 中でなら壊しても作り直せますし、GCP は dev しか触れず、外向き通信も許可リストに限られます。
+> **ホストで同じことをすると、ファイル全体と本人の GCP 権限が対象になります。**
+>
+> 今どちらにいるかは、プロンプトで見分けられます。
+> ```
+> claude-code@Sibelius:~/dev/projects/tokyo-kosodate-navi$   ← ホスト
+> dev@ad7af3ed38b2:/workspace$                               ← コンテナの中
+> ```
+
+> フラグを付け忘れると、承認待ちで止まったまま進みません。
+> スマホから見ていると気づきにくいので、`make agent-shell` が案内する
+> コマンドをそのままコピーして使ってください。
 
 > tmux が初めてなら [docs/tmux.md](tmux.md) を見てください。
 > 最低限これだけ覚えれば足ります。
@@ -341,6 +382,7 @@ make check
 | `make agent-up` で port is already allocated | 他ユーザーと衝突。`.env` に `DEV_PORT=8081` |
 | コンテナ内でファイルを保存できない | uid のずれ。`make agent-down && make agent-up` で作り直す |
 | `docker ps` が権限エラー | `sudo usermod -aG docker $USER` の後、**ログインし直す** |
+| ホストで `gh: command not found` | **仕様**。`gh` はコンテナの中だけ。`make agent-shell` してから使う |
 | `claude: command not found`（ホスト） | `~/.local/bin` が PATH に無い。通すか再ログイン |
 | `gcloud: command not found` | インストール後に `exec -l $SHELL` で PATH を反映 |
 | Claude Code を更新したい | ホストで `claude install stable`。コンテナにも反映される |
