@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-# devcontainer では依存がイメージに焼き込み済みなので VENV=/usr/local で上書きする
+# 開発用コンテナでは依存がイメージに焼き込み済みなので VENV=/usr/local で上書きする
 # （そちらの bin/ に pytest や ruff が入っている）。素の環境では .venv を作って使う。
 VENV        ?= .venv
 PY          := $(VENV)/bin/python
@@ -87,25 +87,29 @@ env: ## 現在の環境設定を表示
 # ---------------------------------------------------------------- 環境構築
 
 .PHONY: setup
-setup: ## 仮想環境と依存関係を用意する（devcontainer では不要）
-	@if [ "$(VENV)" != ".venv" ]; then \
-		echo "✅ devcontainer では依存がイメージに入っているため setup は不要です"; \
-		exit 0; \
+setup: ## 仮想環境と依存関係を用意する（コンテナ内では不要）
+	@# 全体を1つのシェルにまとめている。make はレシピを行ごとに別シェルで動かすため、
+	@# if の中で exit しても次の行は実行されてしまう。分けて書くと、コンテナ内で
+	@# 「不要です」と表示した直後に /usr/local を venv 化しようとして壊す（実際に踏んだ）。
+	@set -e; \
+	if [ "$(VENV)" != ".venv" ]; then \
+		echo "✅ コンテナでは依存がイメージに入っているため setup は不要です"; \
+	else \
+		python3 -m venv $(VENV); \
+		$(PY) -m ensurepip --upgrade; \
+		$(PIP) install -q --upgrade pip; \
+		$(PIP) install -q -r requirements-dev.txt; \
+		: '--with-deps は OS パッケージを入れるため sudo が要る。CI では通るが手元では'; \
+		: 'パスワード入力できずに失敗することがある。ブラウザ本体さえ入れば E2E は動くので'; \
+		: '失敗しても setup 全体は止めず、必要なときの対処だけ案内する。'; \
+		$(VENV)/bin/playwright install --with-deps chromium \
+			|| ($(VENV)/bin/playwright install chromium \
+			    && echo "⚠️  OS依存パッケージの導入をスキップしました（sudo が必要）。" \
+			    && echo "    E2E がブラウザ起動で失敗する場合は手動で実行してください:" \
+			    && echo "    sudo $(VENV)/bin/playwright install-deps chromium"); \
+		echo ""; \
+		echo "✅ setup 完了"; \
 	fi
-	python3 -m venv $(VENV)
-	$(PY) -m ensurepip --upgrade
-	$(PIP) install -q --upgrade pip
-	$(PIP) install -q -r requirements-dev.txt
-	@# --with-deps は OS パッケージを入れるため sudo が要る。CI では通るが手元では
-	@# パスワード入力できずに失敗することがある。ブラウザ本体さえ入れば E2E は動くので、
-	@# 失敗しても setup 全体は止めず、必要なときの対処だけ案内する。
-	$(VENV)/bin/playwright install --with-deps chromium \
-		|| ($(VENV)/bin/playwright install chromium \
-		    && echo "⚠️  OS依存パッケージの導入をスキップしました（sudo が必要）。" \
-		    && echo "    E2E がブラウザ起動で失敗する場合は手動で実行してください:" \
-		    && echo "    sudo $(VENV)/bin/playwright install-deps chromium")
-	@echo ""
-	@echo "✅ setup 完了"
 	@echo ""
 	@$(MAKE) --no-print-directory next
 
@@ -207,7 +211,7 @@ agent-firewall: ## 外向き通信の許可リストを入れ直す（宛先のI
 lock: ## 本番イメージの依存を再固定する (app/requirements.in を変えたら必ず実行)
 	@# ロックは解決した Python のバージョンに紐づく。本番イメージは 3.12 なので、
 	@# 3.12 以外で作ると本番で入らないロックになる。
-	@# devcontainer は本番と同じ 3.12 なのでそのまま実行できる。
+	@# 開発用コンテナは本番と同じ 3.12 なのでそのまま実行できる。
 	@# それ以外の環境では docker で 3.12 を用意する（そのために docker が要る）。
 	@if [ "$$($(PY) -c 'import sys; print("%d.%d" % sys.version_info[:2])')" = "3.12" ]; then \
 		echo "Python 3.12 のためそのまま解決します"; \
