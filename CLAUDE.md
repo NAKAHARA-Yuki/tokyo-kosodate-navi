@@ -116,6 +116,10 @@ make deploy ENV=dev       # dev の Cloud Run へ（回数制限なし。自由�
 make url ENV=dev          # URL を確認して利用者に伝える
 ```
 
+**URL はユーザーごとに分かれる**（`https://<ユーザー名>---kosodate-graph-viewer-dev-....run.app`）。
+dev の Cloud Run サービスはチームで1つを共有しているが、リビジョンタグを付けて
+`--no-traffic` で出しているため、他の人のデプロイに上書きされない。
+
 staging と prod へは権限が無く、そもそもデプロイできない。
 
 ### ただし後片付けはすること

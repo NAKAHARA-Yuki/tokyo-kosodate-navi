@@ -138,6 +138,10 @@ export HOST_GID   := $(shell id -g)
 DEV_PORT          ?= 8080
 export DEV_PORT
 
+# dev の Cloud Run に出すときのリビジョンタグ。ユーザーごとに専用 URL を得るため。
+# タグに使えるのは英小文字・数字・ハイフンだけなので、それ以外は落とす。
+DEPLOY_TAG := $(shell id -un | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-' | sed 's/-*$$//')
+
 COMPOSE := docker compose -f docker/compose.yaml
 
 .PHONY: agent-up
@@ -270,7 +274,20 @@ dev: ## ローカルでアプリを起動する (http://localhost:8080)
 
 .PHONY: url
 url: ## デプロイ済みサービスのURLを表示する
-	@gcloud run services describe $(SERVICE) --project $(PROJECT_ID) --region $(REGION) --format='value(status.url)'
+	@# dev は複数人が同じサービスを使うので、自分のタグが付いた URL を返す。
+	@# タグが無ければ（まだデプロイしていなければ）サービス既定の URL を返す。
+	@if [ "$(ENV)" = "dev" ]; then \
+		TAGGED=$$(gcloud run services describe $(SERVICE) --project $(PROJECT_ID) --region $(REGION) \
+			--format="value(status.traffic.filter(tag:$(DEPLOY_TAG)).extract(url))" 2>/dev/null | tr -d '[]'); \
+		if [ -n "$$TAGGED" ]; then \
+			echo "$$TAGGED"; \
+		else \
+			echo "（あなたのタグはまだありません。make deploy ENV=dev で作られます）"; \
+			gcloud run services describe $(SERVICE) --project $(PROJECT_ID) --region $(REGION) --format='value(status.url)'; \
+		fi; \
+	else \
+		gcloud run services describe $(SERVICE) --project $(PROJECT_ID) --region $(REGION) --format='value(status.url)'; \
+	fi
 
 .PHONY: deploy
 deploy: ## Cloud Run の dev にデプロイする (staging/prod は GitHub Actions 経由)
@@ -286,6 +303,10 @@ deploy: ## Cloud Run の dev にデプロイする (staging/prod は GitHub Acti
 		echo "   詳細: CONTRIBUTING.md「リリース手順」"; \
 		exit 1; \
 	fi
+	@# ユーザーごとにリビジョンタグを付ける。dev の Cloud Run サービスは1つしかなく、
+	@# そのままデプロイすると後から出した人が上書きしてしまい、相手の URL に
+	@# 自分のコードが出る。タグを付ければ同じサービスのまま専用 URL が生える。
+	@# --no-traffic なので、既定の URL は他の人のデプロイに影響されない。
 	gcloud run deploy $(SERVICE) \
 		--source ./app \
 		--project $(PROJECT_ID) \
@@ -293,7 +314,12 @@ deploy: ## Cloud Run の dev にデプロイする (staging/prod は GitHub Acti
 		--allow-unauthenticated \
 		--set-env-vars GCP_PROJECT_ID=$(PROJECT_ID),APP_ENV=$(ENV) \
 		--memory 512Mi --cpu 1 --min-instances 0 --max-instances 3 --timeout 120 \
+		--tag $(DEPLOY_TAG) --no-traffic \
 		--quiet
+	@echo ""
+	@echo "✅ あなた専用の URL に出しました（他の人のデプロイに上書きされません）"
+	@echo ""
+	@$(MAKE) --no-print-directory url ENV=$(ENV)
 
 # ---------------------------------------------------------------- データパイプライン
 

@@ -37,9 +37,58 @@ def run(args: list[str], check: bool = True) -> str:
     return res.stdout
 
 
+def try_run(args: list[str]) -> tuple[bool, str]:
+    """成否と最初のエラー行を返す。成功したと嘘をつかないために使う。"""
+    res = subprocess.run(args, capture_output=True, text=True)
+    if res.returncode == 0:
+        return True, ""
+    lines = [ln for ln in res.stderr.strip().splitlines() if ln.strip()]
+    return False, (lines[-1] if lines else "原因不明")
+
+
 def clean_revisions() -> None:
-    """使われていない古いリビジョンを消す。トラフィックのあるものは残す。"""
+    """誰も使っていないリビジョンだけを消す。
+
+    「最新以外を消す」ではいけない。dev の Cloud Run はチームで1つを共有しており、
+    各自が自分のタグ付きリビジョンを持っている（make deploy ENV=dev）。
+    最新以外を消すと他の人の確認用 URL を壊す。
+
+    残すのは次の2種類:
+      - トラフィックが流れているもの（消そうとしても Cloud Run に拒否される）
+      - タグが付いているもの（誰かの確認用 URL）
+    """
     print(f"▶ Cloud Run のリビジョン ({SERVICE})")
+
+    out = run(
+        [
+            "gcloud",
+            "run",
+            "services",
+            "describe",
+            SERVICE,
+            "--project",
+            PROJECT,
+            "--region",
+            REGION,
+            "--format",
+            "json",
+        ]
+    )
+    if not out.strip():
+        print("  サービスが見つかりません")
+        return
+    traffic = json.loads(out).get("status", {}).get("traffic", [])
+
+    protected: dict[str, str] = {}
+    for t in traffic:
+        name = t.get("revisionName")
+        if not name:
+            continue
+        if t.get("percent", 0) > 0:
+            protected[name] = f"トラフィック {t['percent']}%"
+        elif t.get("tag"):
+            protected[name] = f"タグ {t['tag']}"
+
     out = run(
         [
             "gcloud",
@@ -61,17 +110,16 @@ def clean_revisions() -> None:
         print("  リビジョンなし")
         return
 
-    # 作成が新しい順。先頭（現行）は必ず残す。
-    revisions.sort(key=lambda r: r["metadata"]["creationTimestamp"], reverse=True)
-    keep, drop = revisions[0], revisions[1:]
-    print(f"  残す: {keep['metadata']['name']}")
+    for name, why in protected.items():
+        print(f"  残す: {name} ({why})")
 
-    if not drop:
+    targets = [r["metadata"]["name"] for r in revisions if r["metadata"]["name"] not in protected]
+    if not targets:
         print("  消すものはありません")
         return
-    for rev in drop:
-        name = rev["metadata"]["name"]
-        run(
+
+    for name in targets:
+        ok, err = try_run(
             [
                 "gcloud",
                 "run",
@@ -83,10 +131,9 @@ def clean_revisions() -> None:
                 "--region",
                 REGION,
                 "--quiet",
-            ],
-            check=False,
+            ]
         )
-        print(f"  削除: {name}")
+        print(f"  削除: {name}" if ok else f"  削除できず: {name} ({err[:120]})")
 
 
 def clean_tables() -> None:
@@ -103,8 +150,8 @@ def clean_tables() -> None:
         print("  消すものはありません")
         return
     for name in extras:
-        run(["bq", "rm", "-f", "-t", f"{PROJECT}:{DATASET}.{name}"], check=False)
-        print(f"  削除: {name}")
+        ok, err = try_run(["bq", "rm", "-f", "-t", f"{PROJECT}:{DATASET}.{name}"])
+        print(f"  削除: {name}" if ok else f"  削除できず: {name} ({err[:120]})")
 
 
 clean_revisions()
