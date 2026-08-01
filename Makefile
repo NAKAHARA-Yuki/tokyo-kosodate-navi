@@ -207,6 +207,10 @@ agent-down: ## コンテナを止める
 agent-firewall: ## 外向き通信の許可リストを入れ直す（宛先のIPが変わったとき）
 	$(COMPOSE) exec -u root agent bash /workspace/docker/init-firewall.sh
 
+.PHONY: cleanup
+cleanup: ## dev に溜まった動作確認の跡を片付ける（リビジョン・検証用テーブル）
+	$(PY) scripts/cleanup_dev.py
+
 .PHONY: lock
 lock: ## 本番イメージの依存を再固定する (app/requirements.in を変えたら必ず実行)
 	@# ロックは解決した Python のバージョンに紐づく。本番イメージは 3.12 なので、

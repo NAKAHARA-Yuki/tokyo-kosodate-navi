@@ -105,6 +105,33 @@ make lock                 # 本番イメージの依存を再固定（requiremen
   マッチさせるだけでなく条件文言を提示するか Gemini に補足させる。
 - `is_prenatal` は妊娠期の制度。子どもの月齢では表現できないので別軸で持っている。
 
+## 動作確認は dev の Cloud Run に出してよい
+
+**画面の確認が必要なときは `make deploy ENV=dev` で dev の Cloud Run に出すこと。**
+スマホから指示を受けて作業する場面が多く、`make dev` でローカルに立てても
+利用者からは見えない。URL を返せる形にする。
+
+```bash
+make deploy ENV=dev       # dev の Cloud Run へ（回数制限なし。自由に使ってよい）
+make url ENV=dev          # URL を確認して利用者に伝える
+```
+
+staging と prod へは権限が無く、そもそもデプロイできない。
+
+### ただし後片付けはすること
+
+確認のたびに Cloud Run のリビジョンが増え、BigQuery には検証用テーブルが残る。
+放置すると「どれが今の状態か」が分からなくなる。
+
+```bash
+make cleanup              # 古いリビジョンと検証用テーブルを消す
+```
+
+- 確認が終わったら `make cleanup` を実行する
+- 検証用に作ったテーブルは `benefits` などの正規8テーブル以外の名前にする
+  （`make cleanup` が正規テーブル以外を消す判定をしている）
+- Artifact Registry のイメージは権限が無く消せない。溜まったら管理者に伝える
+
 ## 落とし穴（踏んだもの）
 
 - **PROPERTY GRAPH には PRIMARY KEY が必須。** ノード/エッジの元テーブルに
