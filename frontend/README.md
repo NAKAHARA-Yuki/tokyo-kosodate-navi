@@ -34,3 +34,24 @@ staging は main マージ、prod は `v*.*.*` タグ push）。
 |---|---|
 | `BACKEND_URL` | backend (FastAPI) の Cloud Run URL。ID トークンの audience にも使う |
 | `BACKEND_REQUIRES_AUTH` | `false` にすると ID トークンを付けない（ローカルで `services proxy` を使うときのみ） |
+
+## デザインシステム（`components/dads/`）
+
+[デジタル庁デザインシステム](https://design.digital.go.jp/dads/react/)を使う。
+色・タイポグラフィ等のトークンは `@digital-go-jp/tailwind-theme-plugin`（`app/globals.css` で
+`@import` 済み）で Tailwind のユーティリティクラスとして使える（例: `bg-key-900`,
+`text-std-24B-150`, `rounded-8`）。
+
+コンポーネント本体（Button, Heading, Link 等）は
+[design-system-example-components-react](https://github.com/digital-go-jp/design-system-example-components-react)
+の React 実装をコピーしたもの（MIT License）。**npm パッケージとしては公開されていない**
+（`package.json` に `publishConfig` はあるが実際には npm に無い。2026-08-01 時点でサンプル
+スニペット集という位置づけ）ため、`npm install` ではなく必要なコンポーネントだけを
+`components/dads/` に個別コピーしている。
+
+コンポーネントを追加するときは:
+1. [`src/components/<Name>/<Name>.tsx`](https://github.com/digital-go-jp/design-system-example-components-react/tree/main/src/components) を取得する
+2. `components/dads/<name>.tsx` としてコピーし、ファイル冒頭に出典コミットを記録する
+3. 相対importを `./slot` 等（このディレクトリ内）に直す
+4. 元がTailwind v3 / React 18向けなので、`strict: true` のTypeScriptで型エラーが出た場合は調整する
+   （Slot/Button/Heading/Link で実施済み。詳細は各ファイルの差分参照）

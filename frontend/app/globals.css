@@ -1,4 +1,7 @@
 @import "tailwindcss";
+/* デジタル庁デザインシステムのテーマプラグイン（色・タイポグラフィ等のトークン）。
+   https://github.com/digital-go-jp/tailwind-theme-plugin */
+@import "@digital-go-jp/tailwind-theme-plugin/v4";
 
 :root {
   --background: #ffffff;

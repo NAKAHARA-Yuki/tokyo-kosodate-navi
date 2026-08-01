@@ -1,7 +1,10 @@
 import { fetchBackend } from "@/lib/backend";
+import { Button } from "@/components/dads/button";
+import { Heading } from "@/components/dads/heading";
+import { Link } from "@/components/dads/link";
 
-// PR1: ID トークン認証で backend を呼べることの動作確認用ページ。
-// 本物のトップページ（一覧ビュー）は後続PRで実装する。
+// PR1〜2: ID トークン認証で backend を呼べることの動作確認 + デジタル庁デザインシステムの
+// 導入確認用ページ。本物のトップページ（一覧ビュー）は後続PRで実装する。
 //
 // fetchBackend() の失敗をこの中で try/catch しているため、Next.js のビルド時
 // 動的判定（ネットワークI/Oを検知して動的にする仕組み）が働かず、ビルド時に
@@ -25,20 +28,46 @@ export default async function Home() {
   }
 
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem" }}>
-      <h1>フロントエンド疎通確認（PR1）</h1>
-      <p>
+    <main className="mx-auto max-w-2xl p-8">
+      <Heading size="28" rule="4" className="mb-6">
+        フロントエンド疎通確認（PR1〜2）
+      </Heading>
+
+      <p className="mb-4">
         このページは Server Component から ID トークン付きで backend の{" "}
         <code>/api/healthz</code> を呼び出しています（ADR 0013）。
+        デジタル庁デザインシステム（<code>components/dads/</code>）の導入確認も兼ねています。
       </p>
+
       {error ? (
-        <p style={{ color: "red" }}>エラー: {error}</p>
+        <p className="mb-4 text-red-700">エラー: {error}</p>
       ) : (
-        <pre>{JSON.stringify(healthz, null, 2)}</pre>
+        <pre className="mb-4 rounded-8 bg-solid-gray-50 p-4">
+          {JSON.stringify(healthz, null, 2)}
+        </pre>
       )}
-      <p>
+
+      <p className="mb-4">
         同一オリジンのプロキシ経由でも確認できます: <code>/api/healthz</code>
         （JSONを直接返すエンドポイントなのでページ遷移ではなくブラウザで直接開いて確認してください）
+      </p>
+
+      <div className="flex gap-4">
+        <Button size="md" variant="solid-fill">
+          solid-fill
+        </Button>
+        <Button size="md" variant="outline">
+          outline
+        </Button>
+        <Button size="md" variant="text">
+          text
+        </Button>
+      </div>
+
+      <p className="mt-4">
+        <Link href="https://design.digital.go.jp/dads/react/" target="_blank">
+          デジタル庁デザインシステム（React）
+        </Link>
       </p>
     </main>
   );
