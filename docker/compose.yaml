@@ -39,6 +39,9 @@ services:
       GCP_PROJECT_ID: opendatahackathon-503500
       # 未指定なら dev。誤って本番を触らないための既定（ADR 0004）
       APP_ENV: dev
+      # ホスト側で公開しているポート。コンテナ内の案内文に出す URL を正しくするため
+      # （コンテナ自身は常に 8080 を listen する）
+      DEV_PORT: ${DEV_PORT:-8080}
       # dev だけ書き込める認証。これ以外の GCP 認証はコンテナ内に存在しない
       GOOGLE_APPLICATION_CREDENTIALS: /home/dev/.config/gcloud/claude-dev-adc.json
     volumes:

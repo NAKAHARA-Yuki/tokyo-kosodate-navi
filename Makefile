@@ -1,6 +1,14 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
+# 各自の設定を .env から読む（git 管理外。1台を複数人で使うときのポート指定など）。
+# compose にも .env を読む仕組みはあるが、それだと効かない。
+#   - compose のプロジェクトディレクトリは compose ファイルのある docker/ になるため、
+#     リポジトリ直下の .env は読まれない
+#   - Makefile が DEV_PORT を export しており、環境変数は compose の .env より優先される
+# ここで読めば make 経由の全てに効く。書式は KEY=VALUE のみ。
+-include .env
+
 # 開発用コンテナでは依存がイメージに焼き込み済みなので VENV=/usr/local で上書きする
 # （そちらの bin/ に pytest や ruff が入っている）。素の環境では .venv を作って使う。
 VENV        ?= .venv
