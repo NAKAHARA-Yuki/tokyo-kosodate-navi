@@ -16,7 +16,7 @@ Gemini は制度のやさしい解説や書類添削といった伴走サポー�
 
 import os
 
-from config import APP_ENV, DATASET_ID, GRAPH_NAME, LOCATION, PROJECT_ID
+from config import APP_ENV, DATASET_ID, LOCATION, PROJECT_ID
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -147,13 +147,11 @@ def search_benefits(
 
 @app.get("/api/subgraph")
 def get_subgraph(benefit_id: str = Query(..., description="中心にする制度のID")):
+    # BigQuery Graph (GQL) は Enterprise 予約が必須になったため通常 SQL で書いている
+    # （経緯は docs/adr/0003）。REQUIRES / REQUIRES_DOC の2つの LEFT JOIN を独立に
+    # 行うことで、GQL の逐次 OPTIONAL MATCH と同じ「条件×書類のクロス積」を再現する。
     query = f"""
-        GRAPH `{GRAPH_NAME}`
-        MATCH (b:Benefit {{benefit_id: @benefit_id}})
-        OPTIONAL MATCH (b)-[:REQUIRES]->(s:Status)
-        -- 必要書類欄には注意書きの文章も混ざるため、書類らしいものだけをノードとして出す
-        OPTIONAL MATCH (b)-[:REQUIRES_DOC]->(d:Document WHERE d.is_probable_document)
-        RETURN
+        SELECT
           b.benefit_id AS benefit_id, b.title AS title, b.category AS category, b.summary AS summary,
           b.area_name AS area_name, b.min_age_months AS min_age_months, b.max_age_months AS max_age_months,
           b.cost_text AS cost_text, b.cost_conditions_text AS cost_conditions_text,
@@ -167,6 +165,18 @@ def get_subgraph(benefit_id: str = Query(..., description="中心にする制度
           b.regulation_name AS regulation_name, b.update_date AS update_date,
           s.status_id AS status_id, s.name AS status_name, s.type AS status_type,
           d.doc_id AS doc_id, d.doc_name AS doc_name
+        FROM `{PROJECT_ID}.{DATASET_ID}.benefits` b
+        LEFT JOIN `{PROJECT_ID}.{DATASET_ID}.benefit_requires_status` brs
+          ON brs.benefit_id = b.benefit_id
+        LEFT JOIN `{PROJECT_ID}.{DATASET_ID}.statuses` s
+          ON s.status_id = brs.status_id
+        -- 必要書類欄には注意書きの文章も混ざるため、書類らしいものだけをノードとして出す
+        -- （ON句に置くことで、書類が無い制度でも制度自体の行は残す＝OPTIONAL MATCH相当）
+        LEFT JOIN `{PROJECT_ID}.{DATASET_ID}.benefit_requires_doc` brd
+          ON brd.benefit_id = b.benefit_id
+        LEFT JOIN `{PROJECT_ID}.{DATASET_ID}.documents` d
+          ON d.doc_id = brd.doc_id AND d.is_probable_document
+        WHERE b.benefit_id = @benefit_id
     """
     job_config = bigquery.QueryJobConfig(
         query_parameters=[bigquery.ScalarQueryParameter("benefit_id", "STRING", benefit_id)]
@@ -410,13 +420,16 @@ def match_benefits(
 
 def _fetch_next_steps(benefit_ids: list[str]):
     """マッチした制度から「次に繋がる制度」をスキルツリーのエッジで取得する。"""
+    # BigQuery Graph (GQL) は Enterprise 予約が必須になったため通常 SQL で書いている（docs/adr/0003）。
     query = f"""
-        GRAPH `{GRAPH_NAME}`
-        MATCH (a:Benefit)-[e:LEADS_TO]->(b:Benefit)
-        WHERE a.benefit_id IN UNNEST(@ids)
-        RETURN a.benefit_id AS from_id, a.title AS from_title,
-               b.benefit_id AS to_id, b.title AS to_title,
-               e.relation AS relation, e.reason AS reason
+        SELECT
+          a.benefit_id AS from_id, a.title AS from_title,
+          b.benefit_id AS to_id, b.title AS to_title,
+          e.relation AS relation, e.reason AS reason
+        FROM `{PROJECT_ID}.{DATASET_ID}.benefit_leads_to` e
+        JOIN `{PROJECT_ID}.{DATASET_ID}.benefits` a ON a.benefit_id = e.from_benefit_id
+        JOIN `{PROJECT_ID}.{DATASET_ID}.benefits` b ON b.benefit_id = e.to_benefit_id
+        WHERE e.from_benefit_id IN UNNEST(@ids)
         LIMIT 80
     """
     job_config = bigquery.QueryJobConfig(

@@ -124,6 +124,12 @@ GitHub の操作は `gh` を使う（`~/.git-credentials` のトークンを実�
   ビルドした日によって中身が変わり、prod と staging が別物になる
   （google-genai が 2.14→2.16 に上がって Gemini 呼び出しが 503 になった実績あり）。
   ロックは本番と同じ `python:3.12-slim` の中で生成する。ローカル（3.14）で作ると本番で入らない。
+- **BigQuery の GQL（`GRAPH ... MATCH`）は Enterprise エディションの予約が必須になった。**
+  コード側の変更なしに `BigQuery Graph queries require a reservation with Enterprise or
+  Enterprise Plus edition.` で全滅する（詳細は [docs/adr/0003](docs/adr/0003-graph-schema.md)）。
+  `/api/subgraph` だけでなく `/api/benefits/match` の `next_steps`（`_fetch_next_steps`）も
+  同じ理由で壊れていた。PROPERTY GRAPH の定義は残したまま、REQUIRES / REQUIRES_DOC /
+  LEADS_TO を辿るクエリは通常SQLの JOIN に書き換えて回避した。
 
 ## コードを書くときの約束
 
