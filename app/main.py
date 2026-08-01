@@ -4,6 +4,8 @@
 制度の適用判定は BigQuery Graph への定型クエリのみで行い（LLM不使用・ミリ秒・誤判定ゼロ）、
 Gemini は制度のやさしい解説や書類添削といった伴走サポートにのみ使う。
 
+- /               : 新しい画面のための仮プレースホルダー（#12）
+- /debug          : 既存の動作確認用画面（cytoscape.js）
 - /api/categories        : カテゴリ一覧（件数付き）
 - /api/areas             : 市区町村一覧
 - /api/benefits          : キーワード／属性で制度を検索
@@ -48,6 +50,13 @@ def get_client() -> bigquery.Client:
 
 @app.get("/", response_class=HTMLResponse)
 def index():
+    """新しい画面ができるまでの仮対応（#12）。動作確認は /debug で行う。"""
+    return "<p>準備中です。動作確認は <a href='/debug'>/debug</a> からどうぞ。</p>"
+
+
+@app.get("/debug", response_class=HTMLResponse)
+def debug_view():
+    """既存画面（cytoscape.js の単一ファイル画面）。動作確認・デバッグ用として残す。"""
     with open(os.path.join(BASE_DIR, "templates", "index.html"), encoding="utf-8") as f:
         return f.read()
 
