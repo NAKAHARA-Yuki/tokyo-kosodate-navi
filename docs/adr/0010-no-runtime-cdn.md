@@ -81,3 +81,12 @@ unpkg の障害やレスポンス遅延で画面が描画されない事故も�
 取り込んだファイルが記録どおりのものか検証する仕組みは無い。
 sha256 は README に書いてあるだけで、CI では照合していない。
 数が増えるようなら照合を `make check` に足す。
+
+## 追記（2026-08-01）: 配置場所を `frontend/public/` に移した
+
+issue #33 で画面を Next.js（`frontend/`）に移し、backend から HTML 応答を無くしたため、
+`app/static/cytoscape.min.js` を `frontend/public/cytoscape.min.js` に移設した。
+版と sha256 の記録先も `frontend/public/README.md` に移している（内容と手順は同じ）。
+
+**方針そのものは変わっていない。** ブラウザが実行時に読むものは外部ホストから取らず、
+リポジトリに取り込んで自分で配る。

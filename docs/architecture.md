@@ -39,8 +39,8 @@ flowchart TB
 **backend と frontend は別々の Cloud Run サービス**（ADR 0013）。ブラウザにはメタデータサーバが
 無く ID トークンを安全に持てないため、frontend のサーバサイド（Route Handler /
 Server Component）が専用サービスアカウント（`kosodate-frontend@...`）で backend を呼ぶ。
-段階導入中で、現時点では backend の `/` `/debug` もまだ残っており `allUsers` も外していない
-（進捗は ADR 0013 参照）。
+**backend は HTML を一切返さない**（`/api/*` と `/api/healthz` のみ）。画面はすべて frontend 側にある。
+ただし backend の `allUsers` はまだ外していない（段階導入中。進捗は ADR 0013 参照）。
 
 ## 層ごとの責務
 
@@ -66,7 +66,7 @@ Server Component）が専用サービスアカウント（`kosodate-frontend@...
 
 | ファイル | 責務 |
 |---|---|
-| `main.py` | アプリ生成・ルーター登録・`/`, `/debug`, `/api/healthz` |
+| `main.py` | アプリ生成・ルーター登録・`/api/healthz`（HTMLは返さない） |
 | `dependencies.py` | BigQuery / Gemini クライアントの生成 |
 | `queries.py` | 複数ルーターで共通の年齢フィルタSQL |
 | `routers/benefits.py` | `/api/categories`, `/api/areas`, `/api/benefits`, `/api/subgraph` |
@@ -113,11 +113,13 @@ backend へは ID トークン付きでサーバサイドから呼ぶ（ADR 0013
 | `frontend/components/dads/` | [デジタル庁デザインシステム](https://design.digital.go.jp/dads/react/)のコンポーネント（npm未公開のため個別コピー。詳細は `frontend/README.md`） |
 | `frontend/app/page.tsx` | トップページ（一覧ビュー）。`/api/benefits` を取得し、項目＋サマリーのカード一覧を表示する（グラフ表示はしない） |
 | `frontend/app/benefits/[id]/page.tsx` | 詳細ビュー（現在はプレースホルダー。本実装は後続PR） |
+| `frontend/public/debug.html` | 既存画面（素のJS + cytoscape.js）。`/debug` で配信（`next.config.ts` のリライト） |
 
-移行が完了するまでの間、既存画面（`app/templates/index.html`、cytoscape.js）は
-backend の `/debug` に残っている。`/` は新画面のための仮プレースホルダー（issue #12）。
+既存画面（`/debug`）は移行期間中の動作確認用として frontend 側に残している。
+中身のJSは相対パス `/api/...` を叩くので、`app/api/[...path]/route.ts` のプロキシ経由で
+backend に届く（ADR 0013 の制約を満たしたまま、クライアントJSを書き換えずに済んでいる）。
 
-旧画面の主なビュー（参考。移行完了後は frontend 側に置き換わる）:
+`/debug` の主なビュー:
 - **グラフ**: 「自分」を中心に対象制度が放射状に並ぶ。制度をタップすると条件・書類だけに絞り込む
 - **タイムライン**: 妊娠中〜18歳の8ステージに制度を配置
 

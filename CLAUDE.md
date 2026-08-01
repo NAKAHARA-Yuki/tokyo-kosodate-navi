@@ -40,11 +40,14 @@ src/            ETL とグラフ構築（ローカル or CI から実行）。et
   age_rules.py    対象年齢をテキストから推定するルール（正規表現のみ）
   create_graph.sql/.py  PROPERTY GRAPH 定義
   verify_graph.py 動作検証クエリ
-app/            Cloud Run で動く FastAPI アプリ。main.py はルーター登録のみで、
-                 実処理は routers/（benefits/match/timeline/support）に分割
+app/            Cloud Run で動く FastAPI。**API専用でHTMLは返さない**（docs/adr/0013）。
+                 main.py はルーター登録のみで、実処理は routers/（benefits/match/timeline/support）に分割
   config.py       環境（dev/staging/prod）ごとの設定。ETL からも参照する
   dependencies.py BigQuery / Gemini クライアントの生成
-  templates/index.html  フロントエンド（素のJS + cytoscape.js。Next.jsではない）
+frontend/       Cloud Run で動く Next.js（別サービス）。画面はすべてこちら
+  lib/backend.ts  backend を ID トークン付きで呼ぶ（サーバ側からのみ。docs/adr/0013）
+  app/api/[...path]/route.ts  backend への catch-all プロキシ
+  public/debug.html  既存画面（素のJS + cytoscape.js）。/debug で配信
 tests/          ユニット・API結合テスト（BigQuery はモック）
 e2e/            Playwright による画面操作テスト
 docs/           設計ドキュメントと ADR
@@ -149,8 +152,8 @@ GitHub の操作は `gh` を使う（`~/.git-credentials` のトークンを実�
   リポジトリは public なので、実アドレスを設定すると履歴として公開される。
 - 日本語のコメント・ドキュメントで統一（チームの共通言語）。
 - 推測でモデル名やAPIの仕様を書かない。動かして確かめてから書く。
-- **ブラウザが実行時に読むものを外部 CDN から取らない。** ライブラリは `app/static/` に
-  取り込んで自分で配り、版と sha256 を `app/static/README.md` に記録する
+- **ブラウザが実行時に読むものを外部 CDN から取らない。** ライブラリは `frontend/public/` に
+  取り込んで自分で配り、版と sha256 を `frontend/public/README.md` に記録する
   （[docs/adr/0010](docs/adr/0010-no-runtime-cdn.md)）。第三者のホストが返したものを
   無検証で実行するのは、本番の依存をハッシュで固定している方針（ADR 0007）と矛盾する。
 - 本番データを触る操作（`make etl` など）は影響を明示してから実行する。

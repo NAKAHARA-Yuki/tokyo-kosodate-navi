@@ -50,7 +50,12 @@ issue #33 で、フロントエンドを Next.js の別サービスに分離す�
 | 3 | 専用 SA に backend(dev) の `run.invoker` を付与 | **完了** |
 | 4 | `claude-dev` に専用 SA の `iam.serviceAccountUser` を付与 | **完了** |
 | 5 | Next.js からサーバ側で ID トークン付き呼び出し | **完了**（2026-08-01。dev の実サービスで確認済み） |
-| 6 | backend から `allUsers` を外す（dev → staging → prod） | 未着手 |
+| 5.5 | backend から HTML 応答（`/` `/debug`）を無くす | **完了**（2026-08-01。issue #33） |
+| 6 | backend から `allUsers` を外す（dev → staging → prod） | 未着手。**5.5 が終わったので実行可能**（`claude-dev` の権限では不可） |
+
+5.5 により、backend が返すのは `/api/*` と `/api/healthz` だけになった。
+既存画面（cytoscape.js）は `frontend/public/debug.html` に移し、frontend の `/debug` が配信する。
+**ブラウザが backend に直接アクセスする理由が無くなったので、6 に進める状態。**
 
 1〜4 は既存サービスに影響しない。実際に dev の backend / frontend とも 200 のままであることを確認した。
 
