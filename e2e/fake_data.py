@@ -150,9 +150,9 @@ def rows_for(query: str) -> list[dict]:
     """発行されたクエリの内容から、返すべきスタブ行を選ぶ。"""
     if "stage_key" in query:
         return TIMELINE_ROWS
-    if "GRAPH " in query and "LEADS_TO" in query:
+    if "benefit_leads_to" in query:
         return []  # next_steps は E2E では空でよい
-    if "GRAPH " in query:
+    if "benefit_requires_status" in query or "benefit_requires_doc" in query:
         return SUBGRAPH_ROWS
     if "area_code, area_name" in query:
         return AREAS

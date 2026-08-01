@@ -72,3 +72,24 @@
 - `NEXT_STEP` は年齢の連続のみで判定しており、意味的な前後関係（例:「認定を受けてから申請」）は
   拾えていない。`conditions_text` のパターンマッチで前提関係を足す余地がある
 - `Scheme` を主役にした「制度マスタ中心のビュー」は未実装
+
+## 追記（2026-08-01）: GQLからSQLへの切り替え
+
+BigQuery の GQL（`GRAPH ... MATCH`）が Enterprise エディションの予約必須になり、
+`/api/subgraph` と `/api/benefits/match` の `next_steps`（`_fetch_next_steps`）、
+`src/verify_graph.py` の検証クエリが全環境で失敗するようになった（issue #16）。
+
+REQUIRES / REQUIRES_DOC / LEADS_TO を辿るこれらのクエリを、通常SQLの `JOIN` に
+書き換えて対応した。判断のポイント:
+
+- **グラフとしてのデータモデル（このADRの本体）は変わっていない。** 変わったのは
+  「ノード/エッジのテーブルをどのクエリ言語で読むか」だけ。`CREATE OR REPLACE PROPERTY GRAPH`
+  の定義（`create_graph.sql`）はそのまま残しており、Enterprise予約なしでGQLが
+  使えるようになれば戻せる。
+- **判定層（`/api/benefits`, `/api/benefits/match` の絞り込み本体, `/api/timeline`）は
+  そもそも通常SQLで、今回の障害の影響を受けていない。** GQLを使っていたのは
+  可視化用の1ホップ探索（`/api/subgraph`）とスキルツリー探索（`next_steps`）のみ。
+- **今後グラフを拡張する手順（ノード/エッジテーブルの追加、`create_graph.sql` への追記）にも
+  影響しない。** 1〜2ホップ程度の探索は `JOIN` で書けるため、当面はSQLで十分。
+  可変長パス探索が必要になった場合は、BigQueryの再帰CTE（`WITH RECURSIVE`）か
+  Enterprise予約の購入（対応案B）を再検討する。

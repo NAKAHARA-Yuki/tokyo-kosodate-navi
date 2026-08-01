@@ -1,4 +1,4 @@
-"""kosodate_graph に対して GQL クエリを発行し、動作検証を行う。
+"""kosodate_graph のノード/エッジテーブルに SQL クエリを発行し、動作検証を行う。
 
 1. リレーション検証: 制度→条件→書類がたどれるか
 2. 属性マッチ検証: ユーザープロフィール（居住地・子どもの月齢）を模した固定値で、
@@ -6,6 +6,10 @@
 3. スキルツリー検証: 制度から制度への LEADS_TO エッジがたどれるか
 
 対象データセットは APP_ENV（dev / staging / prod）で切り替わる。
+
+BigQuery Graph (GQL) は Enterprise 予約が必須になったため、ここでは通常 SQL で
+ノード/エッジテーブルを直接 JOIN している（経緯は docs/adr/0003）。
+PROPERTY GRAPH の定義自体は create_graph.sql に残しており、データモデルは変わらない。
 """
 
 import os
@@ -15,39 +19,42 @@ from pathlib import Path
 from google.cloud import bigquery
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
-from config import APP_ENV, GRAPH_NAME, LOCATION  # noqa: E402
+from config import APP_ENV, DATASET_ID, GRAPH_NAME, LOCATION, PROJECT_ID  # noqa: E402
 
 RELATION_QUERY = f"""
-GRAPH `{GRAPH_NAME}`
-MATCH (b:Benefit)-[:REQUIRES]->(s:Status), (b)-[:REQUIRES_DOC]->(d:Document)
-RETURN b.title AS benefit_title, s.name AS requirement, d.doc_name AS required_document
+SELECT b.title AS benefit_title, s.name AS requirement, d.doc_name AS required_document
+FROM `{PROJECT_ID}.{DATASET_ID}.benefit_requires_status` brs
+JOIN `{PROJECT_ID}.{DATASET_ID}.benefits` b ON b.benefit_id = brs.benefit_id
+JOIN `{PROJECT_ID}.{DATASET_ID}.statuses` s ON s.status_id = brs.status_id
+JOIN `{PROJECT_ID}.{DATASET_ID}.benefit_requires_doc` brd ON brd.benefit_id = b.benefit_id
+JOIN `{PROJECT_ID}.{DATASET_ID}.documents` d ON d.doc_id = brd.doc_id
 LIMIT 5
 """
 
 # ユーザープロフィール想定: 台東区(131067)在住、子ども 3歳(36ヶ月)
 # 年齢は effective_*（明示値がなければ推定値）で絞る。素の min/max だと6割超が NULL で素通りする。
 ATTRIBUTE_MATCH_QUERY = f"""
-GRAPH `{GRAPH_NAME}`
-MATCH (b:Benefit)
-WHERE b.area_code = @area_code
-  AND (b.effective_min_age_months IS NULL OR b.effective_min_age_months <= @age_months)
-  AND (b.effective_max_age_months IS NULL OR b.effective_max_age_months >= @age_months)
-RETURN
-  b.title AS title,
-  b.category AS category,
-  b.effective_min_age_months AS min_age_months,
-  b.effective_max_age_months AS max_age_months,
-  b.age_source AS age_source,
-  b.has_free_text_conditions AS has_free_text_conditions
+SELECT
+  title,
+  category,
+  effective_min_age_months AS min_age_months,
+  effective_max_age_months AS max_age_months,
+  age_source,
+  has_free_text_conditions
+FROM `{PROJECT_ID}.{DATASET_ID}.benefits`
+WHERE area_code = @area_code
+  AND (effective_min_age_months IS NULL OR effective_min_age_months <= @age_months)
+  AND (effective_max_age_months IS NULL OR effective_max_age_months >= @age_months)
 ORDER BY title
 LIMIT 10
 """
 
 SKILL_TREE_QUERY = f"""
-GRAPH `{GRAPH_NAME}`
-MATCH (a:Benefit)-[e:LEADS_TO]->(b:Benefit)
+SELECT a.title AS src, b.title AS dst, e.relation AS relation, e.reason AS reason
+FROM `{PROJECT_ID}.{DATASET_ID}.benefit_leads_to` e
+JOIN `{PROJECT_ID}.{DATASET_ID}.benefits` a ON a.benefit_id = e.from_benefit_id
+JOIN `{PROJECT_ID}.{DATASET_ID}.benefits` b ON b.benefit_id = e.to_benefit_id
 WHERE a.area_name = "台東区"
-RETURN a.title AS src, b.title AS dst, e.relation AS relation, e.reason AS reason
 ORDER BY relation, src
 LIMIT 5
 """
