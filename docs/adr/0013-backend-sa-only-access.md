@@ -51,11 +51,49 @@ issue #33 で、フロントエンドを Next.js の別サービスに分離す�
 | 4 | `claude-dev` に専用 SA の `iam.serviceAccountUser` を付与 | **完了** |
 | 5 | Next.js からサーバ側で ID トークン付き呼び出し | **完了**（2026-08-01。dev の実サービスで確認済み） |
 | 5.5 | backend から HTML 応答（`/` `/debug`）を無くす | **完了**（2026-08-01。issue #33） |
-| 6 | backend から `allUsers` を外す（dev → staging → prod） | 未着手。**5.5 が終わったので実行可能**（`claude-dev` の権限では不可） |
+| 6a | backend(**dev**) から `allUsers` を外す | **完了**（2026-08-02） |
+| 6b | backend(**staging**) から `allUsers` を外す | **保留。先に staging の frontend が要る**（下記） |
+| 6c | backend(**prod**) から `allUsers` を外す | **保留。今やると公開サービスが落ちる**（下記） |
 
 5.5 により、backend が返すのは `/api/*` と `/api/healthz` だけになった。
 既存画面（cytoscape.js）は `frontend/public/debug.html` に移し、frontend の `/debug` が配信する。
 **ブラウザが backend に直接アクセスする理由が無くなったので、6 に進める状態。**
+
+### 6a の結果（dev、2026-08-02）
+
+`allUsers` を外したあと、`kosodate-frontend-dev` のタグ付き URL で
+一覧・詳細・`/debug` がすべて動作することを実ブラウザで確認した。
+backend を直接開くと 403。**ID トークン経由の SA 限定アクセスが実証された。**
+
+IAM の伝播に **約90秒**かかった。外した直後は 200 のままなので、
+すぐ確認して「効いていない」と判断しないこと。
+
+### 6b / 6c を保留する理由
+
+**staging と prod には frontend サービスが存在しない。**
+`kosodate-frontend-dev` しか無く、`.github/workflows/deploy.yml` も
+backend（`--source ./app`）しかデプロイしていない。
+
+| 環境 | backend の `/` | 状態 |
+|---|---|---|
+| dev | — | frontend あり。6a 完了 |
+| staging | **404** | backend は HTML を返さなくなったのに frontend が無い。**UI が無い** |
+| prod | 200 | 公開中。タグ（`v0.1.3`）が 5.5 より前なので、まだ HTML を返す旧リビジョン |
+
+- **staging**: `allUsers` を外すと CI の staging E2E が壊れる。
+  あれは staging **backend** の URL を直接叩いている（`E2E_BASE_URL`）
+- **prod**: 今 `allUsers` を外すと、公開サービスが即座に落ちる。
+  prod は旧リビジョンのままで UI を配信しており、代わりになる frontend が無い
+
+先に必要な作業:
+
+1. `kosodate-frontend-staging` / `kosodate-frontend`（prod）を作る
+   （[ADR 0008](0008-scoped-credentials.md) の初回ブートストラップ手順）
+2. `deploy.yml` に frontend のデプロイジョブを足す
+3. staging E2E の対象を frontend の URL に変える
+4. そのうえで staging → prod の順に `allUsers` を外す
+
+**staging は既に UI が無い状態**なので、1〜3 は `allUsers` とは無関係に急ぐ。
 
 1〜4 は既存サービスに影響しない。実際に dev の backend / frontend とも 200 のままであることを確認した。
 
@@ -64,43 +102,84 @@ Server Component（直接呼び出し）・Route Handler プロキシの両方�
 backend の `/api/healthz` を ID トークン付きで呼べることを確認した
 （`env: dev` が正しく返る）。
 
-### 追記: `--source` デプロイ用 GCS バケット（**解決済み。個別の権限付与は不要だった**）
+### 追記: `--source` デプロイ用 GCS バケットの権限（**再訂正。対応は途中**）
+
+この節は2度書き換えている。経緯ごと残す。同じ誤りを繰り返さないため。
 
 `gcloud run deploy --source` は Cloud Build がソースをアップロードする先として
 `run-sources-{project}-{region}` という GCS バケットを使う。
-frontend の初回デプロイ時、このバケットが**まだ存在せず**、
-`claude-dev` は `storage.buckets.create` を持たないため失敗した。
+frontend の初回デプロイ時、このバケットがまだ存在せず、
+`claude-dev` は `storage.buckets.create` を持たないため失敗した。ここまでは事実。
 
-当初これを「バケットへの権限が `claude-dev` に無い。個別付与が必要」と記録したが、
-**それは誤りだった。** 実際に必要だったのは最初の1回の作成だけで、
-バケットができた後は `claude-dev` でそのまま回る。
+#### 1度目の記録（誤り）
 
-バケット作成時に `claude-dev` へ `roles/storage.objectAdmin` が付く。
+「バケットへの権限が無い。個別付与が必要」と書いた。方向としては正しかった。
+
+#### 2度目の記録（これも誤り。より悪かった）
+
+「バケット作成後は `claude-dev` でそのまま回る。追加の権限付与は不要」と訂正した。
+**これは検証方法が間違っていた。**
+
+Makefile の `GOOGLE_APPLICATION_CREDENTIALS` を設定して `gcloud` を実行し、
+成功したので「`claude-dev` で回る」と判断したが、
+**`gcloud` CLI は `GOOGLE_APPLICATION_CREDENTIALS` を無視する**（後述）。
+実際には検証者本人の広い権限で走っていた。
 
 ```
-roles/storage.objectAdmin
-  serviceAccount:claude-dev@opendatahackathon-503500.iam.gserviceaccount.com
+GAC 未設定             : nakahara.yuki.dev@gmail.com
+GAC=claude-dev-adc.json: nakahara.yuki.dev@gmail.com   ← 変わらない
 ```
 
-2026-08-02、バケット作成後に `claude-dev` の認証情報で実測した結果:
+`--impersonate-service-account` で測り直すと、`claude-dev` では通らなかった。
 
-| 操作 | 結果 |
-|---|---|
-| `gcloud storage buckets describe` | 成功 |
-| `gcloud storage ls`（オブジェクト一覧） | 成功 |
-| `make deploy-frontend ENV=dev` | 成功（`kosodate-frontend-dev-00004-yos`） |
-| `make deploy ENV=dev`（backend） | 成功（`kosodate-graph-viewer-dev-00005-sos`） |
+#### 実際に必要だったもの
 
-**frontend・backend とも `claude-dev` で継続的にデプロイできる。追加の権限付与は不要。**
+バケットには `roles/storage.objectAdmin` が付いていた。
+**この役割は `storage.buckets.get` を含まない。**
+「バインディングがある」ことと「必要な権限が揃っている」ことは別。
 
-これは Cloud Run サービスそのものと同じ構図で、
-[ADR 0008](0008-scoped-credentials.md)「dev の Cloud Run サービスを増やすときの手順」の
-**初回だけ広い権限の人が作る**というパターンがそのまま当てはまる。
-リージョンごとに1つなので、この作成はプロジェクトで実質1回きり。
+| 不足していた権限 | 与える役割 | 範囲 | 状態 |
+|---|---|---|---|
+| `storage.buckets.get` | `roles/storage.legacyBucketReader` | バケット単位 | **付与済み** |
+| `serviceusage.services.use` | `roles/serviceusage.serviceUsageConsumer` | **プロジェクト単位** | **未付与** |
 
-> 教訓: 「権限エラーが出た」から「権限の恒久的な付与が要る」を導かないこと。
-> リソースが存在しないことによる作成権限の不足なのか、
-> 既存リソースへのアクセス権限の不足なのかで、対応がまったく変わる。
+2つ目はプロジェクト単位でしか付けられない。データへのアクセス権ではなく
+「API 呼び出しをこのプロジェクトに課金して使ってよい」という性質のもので、
+ADR 0008 の「書き込みは dev だけ」という前提は崩さない。
+
+```bash
+gcloud projects add-iam-policy-binding opendatahackathon-503500 \
+  --member="serviceAccount:claude-dev@opendatahackathon-503500.iam.gserviceaccount.com" \
+  --role="roles/serviceusage.serviceUsageConsumer"
+```
+
+これを付けるまで、`claude-dev` からの `--source` デプロイは通らない。**未対応。**
+
+### 重要: `gcloud` は `GOOGLE_APPLICATION_CREDENTIALS` を見ない
+
+上の誤りの根本原因であり、[ADR 0008](0008-scoped-credentials.md) の記述にも影響する。
+
+`GOOGLE_APPLICATION_CREDENTIALS` は**クライアントライブラリ（ADC）用**の変数で、
+`gcloud` CLI は自分の認証ストア（`gcloud auth list`）を使う。
+
+| コマンド | 使う認証 | スコープが効くか |
+|---|---|---|
+| `make etl` / `make graph` / `make verify` | Python のクライアントライブラリ → ADC | **効く**（想定どおり） |
+| `make deploy` / `make deploy-frontend` | `gcloud run deploy` | **効かない。実行者本人の権限で動く** |
+
+つまり「手元から書き込めるのは dev だけ」という保証は、
+BigQuery 側では権限層で成立しているが、**Cloud Run 側は Makefile の
+`if [ "$(ENV)" != "dev" ]` というガードだけ**で守られている。
+
+`gcloud` を `claude-dev` として動かしたいときは `--impersonate-service-account` を使う。
+**検証のときは必ず主体を確認すること。**
+
+```bash
+curl -sS "https://oauth2.googleapis.com/tokeninfo?access_token=$(gcloud auth print-access-token)" | jq -r .email
+```
+
+> 教訓: 「成功した」ことより「**誰として**成功したか」を先に確かめる。
+> 権限の検証で主体を取り違えると、無いはずの権限が有ることになってしまう。
 
 ## 理由
 

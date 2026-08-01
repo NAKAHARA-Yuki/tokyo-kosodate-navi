@@ -37,6 +37,19 @@ staging と prod への反映は GitHub Actions 経由に一本化する。**
 
 prod を READER にしているのは `make clone-data` が prod から読むため。書き込みは落ちる。
 
+> **重要な限界（2026-08-02 追記）**: この仕組みが効くのは
+> **クライアントライブラリ（ADC）を使うコマンドだけ**。
+> `gcloud` CLI は `GOOGLE_APPLICATION_CREDENTIALS` を見ず、自分の認証ストアを使う。
+>
+> | コマンド | 使う認証 | スコープが効くか |
+> |---|---|---|
+> | `make etl` / `make graph` / `make verify` | Python のライブラリ → ADC | **効く** |
+> | `make deploy` / `make deploy-frontend` | `gcloud run deploy` | **効かない。実行者本人の権限** |
+>
+> つまり Cloud Run 側は権限層ではなく `make deploy` の `ENV` チェックだけで守られている。
+> `gcloud` を `claude-dev` として動かすには `--impersonate-service-account` を使う。
+> 詳細と経緯は [ADR 0013](0013-backend-sa-only-access.md)。
+
 Makefile は `$(HOME)/.config/gcloud/claude-dev-adc.json` があればそれを
 `GOOGLE_APPLICATION_CREDENTIALS` に設定する。無い環境（CI や他のメンバー）では
 既定の認証のまま動くので、この仕組みを知らなくても支障はない。
