@@ -46,6 +46,9 @@
 Python・依存関係・Playwright のブラウザ・gcloud CLI がすべて入ったコンテナが立ち上がります。
 **`make setup` は不要**で、Python も本番と同じ 3.12 にそろいます。
 
+ホスト側に要るのは git / tmux / Docker / gcloud / Claude Code だけです。
+インストール手順は [docs/onboarding.md](docs/onboarding.md#ホスト側に入れるもの) を参照してください。
+
 ```bash
 git clone <このリポジトリ> && cd tokyo-kosodate-navi
 

@@ -37,6 +37,8 @@ echo
 echo "─────────────────────────────────────────────"
 echo " 本人に伝えること"
 echo "─────────────────────────────────────────────"
+echo "  0. ホストに git / tmux / Docker / gcloud / Claude Code を入れる"
+echo "       docs/onboarding.md「ホスト側に入れるもの」に手順があります"
 echo "  1. GitHub の PAT を作って ~/.git-credentials に置く"
 echo "       スコープは repo と workflow の2つ（workflow を忘れると push が拒否されます）"
 echo "  2. gcloud auth application-default login"
