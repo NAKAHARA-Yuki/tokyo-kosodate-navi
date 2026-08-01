@@ -17,9 +17,7 @@
       "Bash(bq show:*)",
       "Bash(bq ls:*)",
       "Bash(gcloud run services list:*)",
-      "Bash(gcloud run services describe:*)"
-    ],
-    "ask": [
+      "Bash(gcloud run services describe:*)",
       "Bash(make etl:*)",
       "Bash(make graph:*)",
       "Bash(make deploy:*)",
