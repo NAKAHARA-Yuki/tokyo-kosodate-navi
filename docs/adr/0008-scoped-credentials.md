@@ -75,6 +75,10 @@ staging と prod のサービスも触れるようになり、この ADR の前�
 | 2026-07-31 | `kosodate-graph-viewer-dev` | nakahara | 本 ADR 導入時 |
 | 2026-08-01 | `kosodate-frontend-dev` | nakahara | Next.js フロントエンド用（issue #33）。作成時はプレースホルダー画像 |
 
+サービス間の呼び出しを絞る話は [ADR 0013](0013-backend-sa-only-access.md) を参照。
+フロントエンドの実行 SA `kosodate-frontend@...` には、`claude-dev` が
+`iam.serviceAccountUser` を持つ（これが無いと `claude-dev` からその SA を指定してデプロイできない）。
+
 ## 理由
 
 ### なぜ鍵ファイルを作らないのか
