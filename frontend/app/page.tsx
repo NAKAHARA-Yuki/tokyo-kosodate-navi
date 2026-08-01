@@ -44,7 +44,13 @@ export default async function Home() {
         <ul className="flex flex-col gap-4">
           {benefits.map((b) => (
             <li key={b.benefit_id} className="rounded-8 border border-solid-gray-300 p-4">
-              <Link href={`/benefits/${b.benefit_id}`} className="text-std-18B-160">
+              {/* benefit_id には `+` が含まれる（例: psid3.0+1000020132152+1+UM5036）。
+                  エンコードせずにURLに載せると、詳細ページ側がクエリに載せ直したときに
+                  `+` がスペースとして解釈されて backend が 404 を返す。 */}
+              <Link
+                href={`/benefits/${encodeURIComponent(b.benefit_id)}`}
+                className="text-std-18B-160"
+              >
                 {b.title}
               </Link>
 

@@ -28,10 +28,14 @@ class _FakeJob:
 
 
 class FakeBigQueryClient:
-    """クエリ内容に応じてスタブ行を返すだけのクライアント。"""
+    """クエリ内容とパラメータに応じてスタブ行を返すだけのクライアント。"""
 
     def query(self, query, job_config=None):
-        return _FakeJob(fake_data.rows_for(query))
+        params = {}
+        if job_config is not None:
+            for p in getattr(job_config, "query_parameters", None) or []:
+                params[p.name] = p.value
+        return _FakeJob(fake_data.rows_for(query, params))
 
 
 class _FakeResponse:

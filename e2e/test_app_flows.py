@@ -11,6 +11,35 @@ import pytest
 from playwright.sync_api import expect
 
 
+class TestTopPage:
+    """新しいトップページ（一覧ビュー）。グラフは出さず、項目＋サマリーのカードを並べる。"""
+
+    @pytest.fixture
+    def top_page(self, page, base_url):
+        page.set_default_timeout(15_000)
+        page.goto(base_url)
+        page.wait_for_selector("main ul li")
+        return page
+
+    def test_benefits_are_listed(self, top_page):
+        assert top_page.locator("main ul li").count() > 0
+
+    def test_no_graph_on_top_page(self, top_page):
+        """トップページはグラフ表示をしない（UX方針）。"""
+        assert top_page.locator("#cy").count() == 0
+
+    def test_detail_link_opens_detail_page(self, top_page):
+        """一覧から詳細へ遷移できること。
+
+        benefit_id は `+` を含むため、URL のエンコードを誤ると backend が 404 を返す。
+        実際に遷移させて回帰を検出する。
+        """
+        top_page.locator("main ul li a").first.click()
+        top_page.wait_for_url(re.compile(r"/benefits/"))
+        # 404 ページではなく詳細が出ていること
+        expect(top_page.locator("main")).to_contain_text("一覧に戻る")
+
+
 class TestInitialRender:
     def test_title_and_sidebar(self, app_page):
         expect(app_page).to_have_title(re.compile("子育て支援制度"))
