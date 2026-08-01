@@ -39,10 +39,29 @@ flowchart TB
 
 | ファイル | 責務 |
 |---|---|
-| `etl_to_bq.py` | 取得・整形・正規化・スキルツリー生成・BigQuery ロード |
+| `etl_to_bq.py` | エントリポイント（取得・全体の実行順序のみ。`make etl` から呼ばれる） |
+| `etl_util.py` | 汎用ヘルパー（ハッシュ、辞書アクセスなど） |
+| `etl_normalize.py` | 日付・時刻・郵便番号・埋め込みリンクの正規化 |
+| `etl_documents.py` | 必要書類欄の分解・表記ゆれ統合 |
+| `etl_statuses.py` | AGE / LOCATION / TAG_* の status ノード生成 |
+| `etl_graph.py` | benefits 行の構築・スキルツリー生成・全体変換（`transform`） |
+| `etl_schema.py` | BigQuery のテーブルスキーマ定義 |
+| `etl_load.py` | BigQuery へのロード |
 | `age_rules.py` | 対象年齢のテキスト推定（正規表現のみ。LLM 不使用） |
 | `create_graph.sql` / `.py` | PROPERTY GRAPH の定義と実行 |
 | `verify_graph.py` | リレーションと属性マッチの動作検証 |
+
+`app/` も責務ごとに分割している:
+
+| ファイル | 責務 |
+|---|---|
+| `main.py` | アプリ生成・ルーター登録・`/`, `/debug`, `/api/healthz` |
+| `dependencies.py` | BigQuery / Gemini クライアントの生成 |
+| `queries.py` | 複数ルーターで共通の年齢フィルタSQL |
+| `routers/benefits.py` | `/api/categories`, `/api/areas`, `/api/benefits`, `/api/subgraph` |
+| `routers/match.py` | `/api/user/profile`, `/api/benefits/match`（Phase2） |
+| `routers/timeline.py` | `/api/timeline`（Phase3） |
+| `routers/support.py` | `/api/support/draft-review`（Gemini, Phase2） |
 
 整形で行っていること（詳細は `docs/data-model.md`）:
 - 本文に `タイトル;URL` 形式で埋め込まれたリンクを分離

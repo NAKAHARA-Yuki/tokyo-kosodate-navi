@@ -53,10 +53,11 @@ class FakeGenaiClient:
 
 
 def build_app():
+    import dependencies
     import main
 
-    main.get_client = lambda: FakeBigQueryClient()
-    main._build_genai_client = lambda: FakeGenaiClient()
+    dependencies.get_client = lambda: FakeBigQueryClient()
+    dependencies._build_genai_client = lambda: FakeGenaiClient()
     return main.app
 
 
