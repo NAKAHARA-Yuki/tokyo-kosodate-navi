@@ -16,3 +16,45 @@ export type Benefit = {
   has_amount_info: boolean;
   electronic_submission: boolean;
 };
+
+// GET /api/subgraph のレスポンス（app/routers/benefits.py: get_subgraph）。
+// cytoscape 用に nodes/edges の形で返ってくる。詳細ビューでは制度ノードの属性と、
+// 条件(Status)・書類(Document)ノードを一覧として使う。
+export type SubgraphNode = {
+  data: {
+    id: string;
+    type: "Benefit" | "Status" | "Document";
+    label: string;
+    // Benefit のときだけ入る属性
+    benefit_id?: string;
+    category?: string;
+    summary?: string;
+    area_name?: string;
+    min_age_months?: number | null;
+    max_age_months?: number | null;
+    cost_text?: string | null;
+    cost_conditions_text?: string | null;
+    monetary_support_text?: string | null;
+    materially_support_text?: string | null;
+    is_free?: boolean;
+    department?: string | null;
+    contact_name?: string | null;
+    contact_phone?: string | null;
+    contact_email?: string | null;
+    contact_address?: string | null;
+    official_url?: string | null;
+    official_title?: string | null;
+    procedure_method?: string | null;
+    procedure_counter?: string | null;
+    electronic_submission?: boolean;
+    regulation_name?: string | null;
+    update_date?: string | null;
+    // Status のときだけ入る
+    status_type?: string;
+  };
+};
+
+export type Subgraph = {
+  nodes: SubgraphNode[];
+  edges: { data: { id: string; source: string; target: string; label: string } }[];
+};

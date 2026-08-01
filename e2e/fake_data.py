@@ -19,7 +19,10 @@ CATEGORIES = [
 
 BENEFITS = [
     {
-        "benefit_id": "psid-3sai",
+        # 実データの benefit_id は `psid3.0+1000020132152+1+UM5036` のように `+` を含む。
+        # URL に載せるときのエンコードを誤ると詳細ページが 404 になるため、
+        # スタブでも `+` 入りの ID を使って回帰を検出できるようにしている。
+        "benefit_id": "psid3.0+3sai+1+UM1",
         "title": "3歳児健康診査",
         "category": "3歳児健康診査",
         "summary": "3歳のお子さんを対象とした健康診査です。",
@@ -68,7 +71,8 @@ BENEFITS = [
 # /api/subgraph は「制度1件 × 条件/書類」の直積で行が返る形
 SUBGRAPH_ROWS = [
     {
-        "benefit_id": "psid-3sai",
+        # BENEFITS の1件目と同じ ID にする（一覧→詳細の遷移を E2E で通すため）
+        "benefit_id": "psid3.0+3sai+1+UM1",
         "title": "3歳児健康診査",
         "category": "3歳児健康診査",
         "summary": "3歳のお子さんを対象とした健康診査です。",
@@ -146,13 +150,23 @@ DRAFT_REVIEW_ROWS = [
 ]
 
 
-def rows_for(query: str) -> list[dict]:
-    """発行されたクエリの内容から、返すべきスタブ行を選ぶ。"""
+def rows_for(query: str, params: dict | None = None) -> list[dict]:
+    """発行されたクエリの内容から、返すべきスタブ行を選ぶ。
+
+    params にはクエリパラメータ（`@benefit_id` など）が入る。
+    subgraph は **存在しない ID なら空を返す**（実データと同じく 404 になる）。
+    ここで常に行を返してしまうと、URLエンコードを誤って別のIDを問い合わせていても
+    E2E が気づけない。
+    """
+    params = params or {}
     if "stage_key" in query:
         return TIMELINE_ROWS
     if "benefit_leads_to" in query:
         return []  # next_steps は E2E では空でよい
     if "benefit_requires_status" in query or "benefit_requires_doc" in query:
+        requested = params.get("benefit_id")
+        if requested is not None and requested != SUBGRAPH_ROWS[0]["benefit_id"]:
+            return []
         return SUBGRAPH_ROWS
     if "area_code, area_name" in query:
         return AREAS
