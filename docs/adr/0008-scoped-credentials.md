@@ -32,6 +32,7 @@ staging と prod への反映は GitHub Actions 経由に一本化する。**
 | `gov_knowledge_db_staging` | READER |
 | `gov_knowledge_db`（prod） | READER |
 | Cloud Run `kosodate-graph-viewer-dev` | run.admin |
+| Cloud Run `kosodate-frontend-dev` | run.admin |
 | Cloud Run staging / prod | **なし** |
 
 prod を READER にしているのは `make clone-data` が prod から読むため。書き込みは落ちる。
@@ -41,6 +42,38 @@ Makefile は `$(HOME)/.config/gcloud/claude-dev-adc.json` があればそれを
 既定の認証のまま動くので、この仕組みを知らなくても支障はない。
 
 あわせて `make deploy` は `ENV=dev` 以外を受け付けない。
+
+### dev の Cloud Run サービスを増やすときの手順
+
+`claude-dev` の権限は**サービス単位**で付けている。プロジェクト全体では
+`roles/run.viewer` しか持たないため、**新しいサービスを作ることはできない**
+（`run.services.create` が無い）。これは意図した設計で、緩めない。
+
+そのため新しいサービスが要るときだけ、より広い権限を持つ人が初回の作成を手で行い、
+そのサービスに限って `roles/run.admin` を付ける。以降のデプロイは `claude-dev` で回る。
+
+```bash
+gcloud run deploy <サービス名> \
+  --image us-docker.pkg.dev/cloudrun/container/hello \
+  --project opendatahackathon-503500 --region asia-northeast1 \
+  --allow-unauthenticated --memory 512Mi --cpu 1 \
+  --min-instances 0 --max-instances 3 --timeout 120 --quiet
+
+gcloud run services add-iam-policy-binding <サービス名> \
+  --project opendatahackathon-503500 --region asia-northeast1 \
+  --member="serviceAccount:claude-dev@opendatahackathon-503500.iam.gserviceaccount.com" \
+  --role="roles/run.admin"
+```
+
+**プロジェクト全体に `roles/run.admin` を付けてはいけない。** それをやると
+staging と prod のサービスも触れるようになり、この ADR の前提が崩れる。
+
+#### 実施記録
+
+| 日付 | サービス | 実施者 | 経緯 |
+|---|---|---|---|
+| 2026-07-31 | `kosodate-graph-viewer-dev` | nakahara | 本 ADR 導入時 |
+| 2026-08-01 | `kosodate-frontend-dev` | nakahara | Next.js フロントエンド用（issue #33）。作成時はプレースホルダー画像 |
 
 ## 理由
 
@@ -77,3 +110,6 @@ owner の認証情報は同じマシンに残っている。
 - dev は自由に壊してよい領域として明確になり、Claude Code に任せやすくなった
 - dev の Cloud Run サービスを新設したため、公開 URL が1つ増えた
   （中身は公開オープンデータのコピーで、認証情報は含まない）
+- dev のサービスを増やすたびに、権限を持つ人の手作業が1回だけ挟まる。
+  自動化していないのは、それが `claude-dev` に新規作成権限を渡すことと同義になるため。
+  頻度が低い（サービス単位で1回きり）ので、手間より境界の明確さを取る
