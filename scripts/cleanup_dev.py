@@ -14,7 +14,9 @@ import sys
 
 PROJECT = "opendatahackathon-503500"
 REGION = "asia-northeast1"
-SERVICE = "kosodate-graph-viewer-dev"
+# frontend を別サービスに分けた（ADR 0013）ので、片付ける対象も2つになった。
+# frontend 側も make deploy-frontend のたびにリビジョンが増える。
+SERVICES = ["kosodate-graph-viewer-dev", "kosodate-frontend-dev"]
 DATASET = "gov_knowledge_db_dev"
 
 # ETL が作る正規のテーブル。これ以外は検証用とみなして消す。
@@ -46,7 +48,7 @@ def try_run(args: list[str]) -> tuple[bool, str]:
     return False, (lines[-1] if lines else "原因不明")
 
 
-def clean_revisions() -> None:
+def clean_revisions(service: str) -> None:
     """誰も使っていないリビジョンだけを消す。
 
     「最新以外を消す」ではいけない。dev の Cloud Run はチームで1つを共有しており、
@@ -57,7 +59,7 @@ def clean_revisions() -> None:
       - トラフィックが流れているもの（消そうとしても Cloud Run に拒否される）
       - タグが付いているもの（誰かの確認用 URL）
     """
-    print(f"▶ Cloud Run のリビジョン ({SERVICE})")
+    print(f"▶ Cloud Run のリビジョン ({service})")
 
     out = run(
         [
@@ -65,7 +67,7 @@ def clean_revisions() -> None:
             "run",
             "services",
             "describe",
-            SERVICE,
+            service,
             "--project",
             PROJECT,
             "--region",
@@ -96,7 +98,7 @@ def clean_revisions() -> None:
             "revisions",
             "list",
             "--service",
-            SERVICE,
+            service,
             "--project",
             PROJECT,
             "--region",
@@ -154,7 +156,8 @@ def clean_tables() -> None:
         print(f"  削除: {name}" if ok else f"  削除できず: {name} ({err[:120]})")
 
 
-clean_revisions()
+for _service in SERVICES:
+    clean_revisions(_service)
 clean_tables()
 
 print()
