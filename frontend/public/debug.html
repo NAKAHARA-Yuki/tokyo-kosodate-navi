@@ -1,52 +1,67 @@
 <!doctype html>
 <html lang="ja">
 <head>
-<title>子育て支援制度ナレッジグラフ</title>
+<title>【開発用】子育て支援制度ナレッジグラフ</title>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<!-- CDN から読まない。理由と更新手順は app/static/README.md と docs/adr/0010 -->
+<!-- 開発・デモ用の画面であり、正式な画面ではない（docs/adr/0014）。検索結果に出さない。 -->
+<meta name="robots" content="noindex, nofollow" />
+<!-- CDN から読まない。理由と更新手順は frontend/public/README.md と docs/adr/0010 -->
 <script src="/cytoscape.min.js"></script>
 <style>
+  /* 配色はデジタル庁デザインシステムのデザイントークンの値に合わせている
+     （@digital-go-jp/design-tokens の tokens-simple.css からコピー）。
+     この画面はビルド工程を持たない素の HTML なので、パッケージを取り込まず値だけを写す。
+     デザインシステムに暗い配色は定義されていないため、明るい配色のみとし、
+     以前あった prefers-color-scheme による切り替えは廃止した（新画面と揃えるため）。 */
   :root {
-    --bg: #0f1420;
-    --panel: #171e2e;
-    --border: #2a3348;
-    --text: #e7ebf3;
-    --muted: #93a0bb;
-    --accent: #5b8cff;
-    --benefit: #5b8cff;
-    --status: #34c38f;
-    --document: #f2b84b;
-    --me: #e356c9;
-  }
-  @media (prefers-color-scheme: light) {
-    :root {
-      --bg: #f5f7fb;
-      --panel: #ffffff;
-      --border: #dde3ee;
-      --text: #1a2233;
-      --muted: #5c6b85;
-      --accent: #2f5fe0;
-      --benefit: #2f5fe0;
-      --status: #1f9d70;
-      --document: #c98a1c;
-      --me: #b8299f;
-    }
+    --bg: #f2f2f2;       /* solid-gray-50 */
+    --panel: #ffffff;    /* white */
+    --border: #b3b3b3;   /* solid-gray-300。新画面のカード枠と同じ */
+    --text: #1a1a1a;     /* solid-gray-900 */
+    --muted: #4d4d4d;    /* solid-gray-700 */
+    --accent: #00118f;   /* blue-1000。新画面のリンク色と同じ */
+    /* グラフのノード色。ラベルを白で描くため、白文字が読める濃さのトークンを選ぶ */
+    --benefit: #0017c1;  /* blue-900 */
+    --status: #197a4b;   /* green-800 */
+    --document: #c74700; /* orange-800 */
+    --me: #8b008b;       /* magenta-900 */
+    --notice-bg: #ffe380;    /* yellow-200 */
+    --notice-border: #d2a400; /* yellow-600 */
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    font-family: -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN", sans-serif;
+    /* デジタル庁デザインシステムが前提とする Noto Sans JP を優先し、
+       無ければ OS の標準的な日本語フォントに落とす。
+       ADR 0010 によりフォントを外部から読み込むことはしない。 */
+    font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
     background: var(--bg);
     color: var(--text);
     height: 100dvh;
     overflow: hidden;
+    /* 上部の開発用バナーを常に表示するため、縦積みにして本体に残りを与える */
+    display: flex;
+    flex-direction: column;
     -webkit-text-size-adjust: 100%;
   }
+  #dev-banner {
+    flex: none;
+    background: var(--notice-bg);
+    color: var(--text);
+    border-bottom: 1px solid var(--notice-border);
+    padding: 8px 16px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  #dev-banner strong { font-weight: 700; }
+  #dev-banner a { color: var(--accent); }
+  #dev-banner .disclaimer { color: var(--text); }
   #layout {
     display: grid;
     grid-template-columns: 340px 1fr;
-    height: 100dvh;
+    flex: 1;
+    min-height: 0;
   }
   /* スマホではタブ切り替えのみ使うため、デスクトップでは隠す */
   #mobile-tabs { display: none; }
@@ -120,7 +135,8 @@
   }
   .result-item .title { font-weight: 600; display: block; }
   .result-item .cat { color: var(--muted); font-size: 11px; }
-  #cy { width: 100%; height: 100vh; }
+  /* 100vh にすると上部バナーの分だけ縦にはみ出す。親（#wrap）の高さに合わせる。 */
+  #cy { width: 100%; height: 100%; }
   #detail {
     position: absolute;
     right: 16px;
@@ -145,7 +161,7 @@
     color: var(--muted);
   }
   .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 4px; }
-  #wrap { position: relative; }
+  #wrap { position: relative; min-height: 0; }
 
   /* グラフ / タイムライン の切り替えタブ */
   #view-tabs {
@@ -240,8 +256,11 @@
     #layout {
       grid-template-columns: 1fr;
       grid-template-rows: 1fr;
-      height: calc(100dvh - 49px); /* タブバーの高さ分を引く */
+      /* 高さは body の flex で決まる（タブバーとバナーの分は自動で引かれる）。
+         以前は calc(100dvh - 49px) でタブバー分を手で引いていたが、
+         バナーが増えて手計算が破綻するためやめた。 */
     }
+    #dev-banner { padding: 6px 12px; font-size: 11px; }
     #mobile-tabs {
       display: flex;
       border-bottom: 1px solid var(--border);
@@ -325,6 +344,14 @@
 </style>
 </head>
 <body>
+
+<!-- この画面が正式なものではないことを、開いた人が必ず目にする位置に置く。
+     免責は #57 で新画面に整えるが、実データの制度情報を出す以上ここにも一文が要る。 -->
+<div id="dev-banner" role="note">
+  <strong>この画面は開発用です。</strong>
+  正式な画面は <a href="/">こちら</a>。
+  <span class="disclaimer">表示している制度情報は参考です。最終的な判断は各自治体の公式情報をご確認ください。</span>
+</div>
 
 <div id="mobile-tabs">
   <button id="tab-search" class="active" type="button">🔍 検索</button>

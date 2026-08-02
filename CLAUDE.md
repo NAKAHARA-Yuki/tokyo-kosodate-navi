@@ -47,7 +47,7 @@ app/            Cloud Run で動く FastAPI。**API専用でHTMLは返さない*
 frontend/       Cloud Run で動く Next.js（別サービス）。画面はすべてこちら
   lib/backend.ts  backend を ID トークン付きで呼ぶ（サーバ側からのみ。docs/adr/0013）
   app/api/[...path]/route.ts  backend への catch-all プロキシ
-  public/debug.html  既存画面（素のJS + cytoscape.js）。/debug で配信
+  public/debug.html  開発用画面（素のJS + cytoscape.js）。/debug で配信。撤去しない（docs/adr/0014）
 tests/          ユニット・API結合テスト（BigQuery はモック）
 e2e/            Playwright による画面操作テスト
 docs/           設計ドキュメントと ADR

@@ -112,10 +112,13 @@ backend へは ID トークン付きでサーバサイドから呼ぶ（ADR 0013
 | `frontend/app/api/[...path]/route.ts` | backend への catch-all プロキシ（ブラウザから同一オリジンで叩けるようにする） |
 | `frontend/components/dads/` | [デジタル庁デザインシステム](https://design.digital.go.jp/dads/react/)のコンポーネント（npm未公開のため個別コピー。詳細は `frontend/README.md`） |
 | `frontend/app/page.tsx` | トップページ（一覧ビュー）。`/api/benefits` を取得し、項目＋サマリーのカード一覧を表示する（グラフ表示はしない） |
-| `frontend/app/benefits/[id]/page.tsx` | 詳細ビュー（現在はプレースホルダー。本実装は後続PR） |
-| `frontend/public/debug.html` | 既存画面（素のJS + cytoscape.js）。`/debug` で配信（`next.config.ts` のリライト） |
+| `frontend/app/benefits/[id]/page.tsx` | 詳細ビュー。`/api/subgraph` から制度・条件・書類を取得して表示する |
+| `frontend/public/debug.html` | 開発用画面（素のJS + cytoscape.js）。`/debug` で配信（`next.config.ts` のリライト） |
 
-既存画面（`/debug`）は移行期間中の動作確認用として frontend 側に残している。
+`/debug` は**開発・デモ用として残す画面**で、撤去しない（[ADR 0014](adr/0014-keep-debug-page.md)）。
+正式な画面と取り違えられないよう、画面上部に開発用である旨を出し、`noindex` を付け、
+新画面からは導線を張らない。デザインシステムでの作り直しはしない（素のHTML1枚で完結することに価値がある）。
+
 中身のJSは相対パス `/api/...` を叩くので、`app/api/[...path]/route.ts` のプロキシ経由で
 backend に届く（ADR 0013 の制約を満たしたまま、クライアントJSを書き換えずに済んでいる）。
 

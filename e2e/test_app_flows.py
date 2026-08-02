@@ -40,6 +40,44 @@ class TestTopPage:
         expect(top_page.locator("main")).to_contain_text("一覧に戻る")
 
 
+class TestDebugPageIsMarkedAsDevOnly:
+    """`/debug` は開発・デモ用として残す画面（docs/adr/0014）。
+
+    正式な画面と取り違えられないことと、検索結果に出ないことを担保する。
+    """
+
+    def test_dev_banner_is_shown(self, app_page):
+        expect(app_page.locator("#dev-banner")).to_be_visible()
+        expect(app_page.locator("#dev-banner")).to_contain_text("開発用")
+
+    def test_banner_links_to_the_real_app(self, app_page):
+        """正式な画面への戻り道があること。"""
+        app_page.locator("#dev-banner a").click()
+        app_page.wait_for_url(re.compile(r"/$"))
+        expect(app_page.locator("main ul li").first).to_be_visible()
+
+    def test_disclaimer_is_shown(self, app_page):
+        """実データの制度情報を出す以上、この画面にも免責が要る。
+
+        `to_contain_text` は要素が非表示でも通ってしまうため、可視性も併せて確認する。
+        """
+        disclaimer = app_page.locator("#dev-banner .disclaimer")
+        expect(disclaimer).to_be_visible()
+        expect(disclaimer).to_contain_text("最終的な判断")
+
+    def test_not_indexed_by_search_engines(self, app_page):
+        content = app_page.locator('meta[name="robots"]').get_attribute("content")
+        assert content is not None and "noindex" in content, (
+            f"robots メタが noindex になっていません: {content!r}"
+        )
+
+    def test_new_pages_do_not_link_to_debug(self, page, base_url):
+        """新画面から `/debug` への導線は張らない。"""
+        page.goto(base_url)
+        page.wait_for_selector("main ul li")
+        assert page.locator('a[href*="/debug"]').count() == 0
+
+
 class TestInitialRender:
     def test_title_and_sidebar(self, app_page):
         expect(app_page).to_have_title(re.compile("子育て支援制度"))
