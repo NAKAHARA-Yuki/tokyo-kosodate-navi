@@ -210,9 +210,10 @@ jobs:
     # backend を先に出す。frontend は backend の URL を環境変数で受け取るため。
     needs: deploy-prod
     runs-on: ubuntu-latest
-    environment:
-      name: production
-      url: ${{ steps.deploy.outputs.url }}
+    # ここには environment: production を付けない。付けると1リリースで承認が2回になり、
+    # 「1回目だけ承認して2回目を忘れる = backend だけ新しく frontend が古い」という
+    # いちばん避けたい中途半端な状態を作れてしまう。
+    # このジョブは deploy-prod の後にしか走らないので、承認ゲートは実質的に効いたまま。
     permissions:
       contents: read
       id-token: write
