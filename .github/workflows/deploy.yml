@@ -56,11 +56,14 @@ jobs:
       - id: deploy
         name: Cloud Run にデプロイ
         run: |
+          # backend は公開しない。呼べるのはフロントエンド専用 SA だけ（ADR 0013）。
+          # ここを --allow-unauthenticated にすると、デプロイのたびに allUsers が
+          # 付け直されて手で剥がした設定が元に戻る（実際に staging で起きた）。
           gcloud run deploy kosodate-graph-viewer-staging \
             --source ./app \
             --project "$GCP_PROJECT_ID" \
             --region "$REGION" \
-            --allow-unauthenticated \
+            --no-allow-unauthenticated \
             --set-env-vars "GCP_PROJECT_ID=$GCP_PROJECT_ID,APP_ENV=staging" \
             --memory 512Mi --cpu 1 --min-instances 0 --max-instances 3 --timeout 120 \
             --quiet
@@ -191,12 +194,13 @@ jobs:
       - id: deploy
         name: Cloud Run にデプロイ
         run: |
-          # どのタグ・コミットが本番に入っているかを Cloud Run 側からも追えるようラベルを付ける
+          # どのタグ・コミットが本番に入っているかを Cloud Run 側からも追えるようラベルを付ける。
+          # backend を公開しない理由は staging 側のコメント参照（ADR 0013）。
           gcloud run deploy kosodate-graph-viewer \
             --source ./app \
             --project "$GCP_PROJECT_ID" \
             --region "$REGION" \
-            --allow-unauthenticated \
+            --no-allow-unauthenticated \
             --set-env-vars "GCP_PROJECT_ID=$GCP_PROJECT_ID,APP_ENV=prod,RELEASE_VERSION=${{ github.ref_name }}" \
             --labels "release=$(echo '${{ github.ref_name }}' | tr '.' '-' | tr '[:upper:]' '[:lower:]'),commit=${{ github.sha }}" \
             --memory 512Mi --cpu 1 --min-instances 0 --max-instances 3 --timeout 120 \
