@@ -3,7 +3,10 @@
 東京都「子育て支援制度レジストリ」の 7,812 件をナレッジグラフ化し、
 居住地と子どもの年齢から**対象になる制度を漏れなく届ける**アプリです。
 
-🔗 **公開URL**: https://kosodate-graph-viewer-531632442373.asia-northeast1.run.app
+🔗 **公開URL**: https://kosodate-frontend-531632442373.asia-northeast1.run.app
+
+> v0.2.0 でフロントエンドを別サービス（Next.js）に分離しました。
+> 旧URL（`kosodate-graph-viewer-...`）は API 専用になり、画面は返しません（[ADR 0013](docs/adr/0013-backend-sa-only-access.md)）。
 
 ## 解決したい課題
 
