@@ -1,6 +1,6 @@
 # ADR 0013: backend への呼び出しをフロントエンドの SA に限定する
 
-- ステータス: 採用（**段階導入中。dev / staging は `allUsers` を剥がし済み。prod のみ残**）
+- ステータス: 採用（**段階導入は完了。dev / staging / prod すべて `allUsers` を剥がし済み**）
 - 日付: 2026-08-01
 - 関連: [ADR 0008](0008-scoped-credentials.md) / issue #33
 
@@ -66,7 +66,7 @@ dev だけ `-dev` が付かないのは、dev しか無かった時期に作っ�
 | 5.5 | backend から HTML 応答（`/` `/debug`）を無くす | **完了**（2026-08-01。issue #33） |
 | 6a | backend(**dev**) から `allUsers` を外す | **完了**（2026-08-02） |
 | 6b | backend(**staging**) から `allUsers` を外す | **完了**（2026-08-02） |
-| 6c | backend(**prod**) から `allUsers` を外す | **保留。prod の frontend が中身の無いまま**（下記） |
+| 6c | backend(**prod**) から `allUsers` を外す | **完了**（2026-08-02。v0.2.0 リリース後） |
 
 5.5 により、backend が返すのは `/api/*` と `/api/healthz` だけになった。
 既存画面（cytoscape.js）は `frontend/public/debug.html` に移し、frontend の `/debug` が配信する。
@@ -98,22 +98,36 @@ staging に UI が戻ったので実施した。外す前に frontend 経由で
 
 伝播は **約75秒**。dev（約90秒）と同様、外した直後は 200 のままなので待つこと。
 
-### 6c を保留する理由
+### 6c の結果（prod、2026-08-02）
 
-**prod の frontend サービスは中身がプレースホルダーのまま。**
-`deploy.yml` に prod の frontend ジョブは入った（#47）が、
-デプロイは `v*.*.*` タグの push で走るため、タグを切るまで反映されない。
+`v0.2.0` を切って prod に frontend を出し、動作確認してから実施した。
+順序は「タグ push → prod の frontend で動作確認 → `allUsers` を外す」。
+先に外すと、旧リビジョンで UI を配信していた公開サービスが即座に落ちる。
 
-| 環境 | backend の `/` | 状態 |
-|---|---|---|
-| dev | — | frontend あり。6a 完了 |
-| staging | — | frontend あり。6b 完了 |
-| prod | 200 | 公開中。タグ（`v0.1.3`）が 5.5 より前なので、まだ HTML を返す旧リビジョン |
+外したあとの実測:
 
-今 `allUsers` を外すと、公開サービスが即座に落ちる。
-prod は旧リビジョンのままで UI を配信しており、代わりになる frontend の中身が無い。
+| 確認先 | 結果 |
+|---|---|
+| backend を直接（匿名） | **403** |
+| frontend `/` `/debug` | 200 |
+| frontend 経由 `/api/healthz` | `{"env":"prod","dataset":"gov_knowledge_db"}` |
 
-**6c の前提はタグを切ること。** 順序は「タグ push → prod の frontend で動作確認 → `allUsers` を外す」。
+剥がしたあとの IAM ポリシーは `kosodate-frontend-prod@` の `run.invoker` だけになった。
+
+### デプロイのたびに allUsers が復活していた
+
+**`deploy.yml` の backend ジョブに `--allow-unauthenticated` が残っていた。**
+これは `allUsers` に `run.invoker` を付けるフラグなので、手で剥がしても
+デプロイのたびに元に戻る。
+
+実際に staging で起きた。6b で剥がして 403 を確認したあと、main へのマージが3回走り、
+匿名で 200 を返す状態に戻っていた。**手順表を「完了」にした直後に壊れていた**ことになる。
+
+#51 で backend（staging / prod）を `--no-allow-unauthenticated` に変えて解消した。
+frontend 側はブラウザが直接アクセスするので `--allow-unauthenticated` のままでよい。
+
+**教訓**: IAM を手で変えたら、それを元に戻す経路（IaC・CI）が無いかを必ず確認する。
+「外した」ことの確認だけでは足りず、「外れたままである」ことの確認が要る。
 
 #### 2026-08-02 時点の進捗
 
@@ -139,7 +153,8 @@ ADR 0008 のとおり、staging / prod への反映は CI 経由のみ。
 2. `deploy.yml` に frontend のデプロイジョブを足す — **完了**（2026-08-02, #47）
 3. staging E2E の対象を frontend の URL に変える — **完了**（2026-08-02, #47）
 4. staging の `allUsers` を外す — **完了**（2026-08-02。6b）
-5. `v*.*.*` タグを切って prod に frontend を出し、そのうえで prod の `allUsers` を外す — 未着手（6c）
+5. `v*.*.*` タグを切って prod に frontend を出し、そのうえで prod の `allUsers` を外す
+   — **完了**（2026-08-02。`v0.2.0`。6c）
 
 2・3 で入れた構成:
 
@@ -280,9 +295,8 @@ Cloud Run のサービス間認証は ID トークン（メタデータサーバ
 ## 積み残し
 
 - ~~staging / prod のフロントエンドサービスはまだ無い~~
-  → 2026-08-02 に作成し、SA も環境ごとに分けた（上表）。`deploy.yml` へのジョブ追加も
-  #47 で完了し、staging には UI が出ている。
-  **prod だけは `v*.*.*` タグを切るまでプレースホルダー画像のまま。**
+  → 2026-08-02 に完了。SA も環境ごとに分け（上表）、`deploy.yml` へのジョブ追加も
+  #47 で入り、`v0.2.0` で prod にも UI が出た。3環境とも backend は非公開。
 - backend 側で「呼び出し元が想定の SA か」を検証してはいない。
   Cloud Run の IAM が手前で弾くので現状は不要だが、
   多層防御として ID トークンの検証を足す余地はある
