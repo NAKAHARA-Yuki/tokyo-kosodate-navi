@@ -92,6 +92,11 @@ staging と prod のサービスも触れるようになり、この ADR の前�
 |---|---|---|---|
 | 2026-07-31 | `kosodate-graph-viewer-dev` | nakahara | 本 ADR 導入時 |
 | 2026-08-01 | `kosodate-frontend-dev` | nakahara | Next.js フロントエンド用（issue #33）。作成時はプレースホルダー画像 |
+| 2026-08-02 | `kosodate-frontend-staging` / `kosodate-frontend` | nakahara | staging / prod のフロントエンド。**`claude-dev` には権限を付けない**（CI 経由のみ） |
+
+staging / prod のサービスも初回作成は同じ手順だが、**`claude-dev` への `run.admin` は付けない。**
+デプロイするのは `github-deployer`（CI）だけなので、代わりに実行 SA への
+`iam.serviceAccountUser` を `github-deployer` に付ける。
 
 サービス間の呼び出しを絞る話は [ADR 0013](0013-backend-sa-only-access.md) を参照。
 フロントエンドの実行 SA `kosodate-frontend@...` には、`claude-dev` が
