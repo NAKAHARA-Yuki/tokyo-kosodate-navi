@@ -33,7 +33,20 @@ issue #33 で、フロントエンドを Next.js の別サービスに分離す�
                    kosodate-graph-viewer-*（FastAPI）
 ```
 
-専用 SA: `kosodate-frontend@opendatahackathon-503500.iam.gserviceaccount.com`
+専用 SA は**環境ごとに分ける**。
+
+| 環境 | frontend サービス | 実行 SA | 呼べる backend |
+|---|---|---|---|
+| dev | `kosodate-frontend-dev` | `kosodate-frontend@` | `kosodate-graph-viewer-dev` |
+| staging | `kosodate-frontend-staging` | `kosodate-frontend-staging@` | `kosodate-graph-viewer-staging` |
+| prod | `kosodate-frontend` | `kosodate-frontend-prod@` | `kosodate-graph-viewer` |
+
+1つの SA を使い回すと、その SA に全環境の backend の `run.invoker` を付けることになり、
+**dev のフロントエンドから prod の backend を呼べてしまう**。
+[ADR 0004](0004-environments.md) で環境を分けた意味が無くなるため、環境ごとに分けた。
+
+dev だけ `-dev` が付かないのは、dev しか無かった時期に作った名残
+（SA はリネームできないため、そのままにしている）。
 
 **dev も SA 限定にする。** staging / prod と構成をそろえ、
 「dev では動くのに staging で落ちる」を防ぐため。
@@ -84,6 +97,23 @@ backend（`--source ./app`）しかデプロイしていない。
   あれは staging **backend** の URL を直接叩いている（`E2E_BASE_URL`）
 - **prod**: 今 `allUsers` を外すと、公開サービスが即座に落ちる。
   prod は旧リビジョンのままで UI を配信しており、代わりになる frontend が無い
+
+#### 2026-08-02 時点の進捗
+
+インフラ側は用意した（下記）。**残るのは `deploy.yml` への frontend ジョブ追加と
+staging E2E の対象変更で、これはコード側の作業。**
+
+作成済み:
+
+| リソース | 内容 |
+|---|---|
+| `kosodate-frontend-staging` / `kosodate-frontend` | Cloud Run サービス。中身はプレースホルダー画像 |
+| `kosodate-frontend-staging@` / `kosodate-frontend-prod@` | 実行 SA。プロジェクト全体の権限はゼロ |
+| 各 backend の `run.invoker` | 対応する環境のフロント SA だけに付与 |
+| `github-deployer` の `iam.serviceAccountUser` | 各フロント SA に付与（無いと CI が SA 指定でデプロイできない） |
+
+`claude-dev` には staging / prod のフロントに**何も付けていない**。
+ADR 0008 のとおり、staging / prod への反映は CI 経由のみ。
 
 先に必要な作業:
 
@@ -225,9 +255,10 @@ Cloud Run のサービス間認証は ID トークン（メタデータサーバ
 
 ## 積み残し
 
-- staging / prod のフロントエンドサービスはまだ無い。作るときに同じ専用 SA を使うか、
-  環境ごとに SA を分けるかは決めていない。**環境ごとに分ける方が
-  ADR 0008 の考え方とは一貫する**が、運用の手間と釣り合うかは要検討
+- ~~staging / prod のフロントエンドサービスはまだ無い~~
+  → 2026-08-02 に作成し、SA も環境ごとに分けた（上表）。
+  **ただし `deploy.yml` に frontend のデプロイジョブがまだ無く、中身はプレースホルダー画像のまま。**
+  これが入るまで staging / prod に UI は出ない
 - backend 側で「呼び出し元が想定の SA か」を検証してはいない。
   Cloud Run の IAM が手前で弾くので現状は不要だが、
   多層防御として ID トークンの検証を足す余地はある
