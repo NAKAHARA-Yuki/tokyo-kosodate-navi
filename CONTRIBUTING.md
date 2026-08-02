@@ -44,7 +44,7 @@ GitHub のリポジトリ設定で **Squash merge のみ有効**にしてくだ�
 ```
 PR                    → CI（lint / test / E2E(スタブ) / Docker build）
 main へ Squash merge  → staging へ自動デプロイ → E2E(staging 実データ)
-v*.*.* タグを push    → 承認 → 本番へデプロイ → スモーク
+v*.*.* タグを push    → 承認 → 本番へデプロイ（backend → frontend）→ スモーク
 ```
 
 **本番は「main の HEAD」ではなく「タグを打ったコミット」を出します。**
@@ -62,6 +62,11 @@ git push origin v1.2.0
 
 タグ push で本番デプロイのワークフローが起動し、
 GitHub Environments（`production`）の承認待ちになります。
+
+**承認は1リリースにつき1回です。** backend（`deploy-prod`）にだけ承認ゲートを置き、
+frontend（`deploy-frontend-prod`）は承認後に続けて走ります。
+frontend 側にもゲートを置くと、1回目だけ承認して2回目を忘れたときに
+「backend だけ新しく frontend が古い」状態を作れてしまうため、あえて分けていません。
 
 バージョンは [セマンティックバージョニング](https://semver.org/lang/ja/)に準じます。
 
