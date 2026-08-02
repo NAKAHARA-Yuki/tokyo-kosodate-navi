@@ -118,12 +118,21 @@ ADR 0008 のとおり、staging / prod への反映は CI 経由のみ。
 先に必要な作業:
 
 1. `kosodate-frontend-staging` / `kosodate-frontend`（prod）を作る
-   （[ADR 0008](0008-scoped-credentials.md) の初回ブートストラップ手順）
-2. `deploy.yml` に frontend のデプロイジョブを足す
-3. staging E2E の対象を frontend の URL に変える
-4. そのうえで staging → prod の順に `allUsers` を外す
+   （[ADR 0008](0008-scoped-credentials.md) の初回ブートストラップ手順）— **完了**（2026-08-02, #46）
+2. `deploy.yml` に frontend のデプロイジョブを足す — **完了**（2026-08-02）
+3. staging E2E の対象を frontend の URL に変える — **完了**（2026-08-02）
+4. そのうえで staging → prod の順に `allUsers` を外す — 未着手（`claude-dev` では不可）
 
 **staging は既に UI が無い状態**なので、1〜3 は `allUsers` とは無関係に急ぐ。
+
+2・3 で入れた構成:
+
+- `deploy-frontend-staging` は `deploy-staging` の後に走り、backend の URL を
+  `BACKEND_URL` として受け取る（`needs.deploy-staging.outputs.url`）。prod も同じ形
+- `--service-account` を明示している。省くと既定の compute SA になり、
+  backend の `run.invoker` を持たないため ID トークン認証が通らない
+- staging E2E と prod スモークは **frontend 経由**で確認する
+  （`<frontend>/api/healthz`）。backend を直接叩くと 4 のあと認証エラーになる
 
 1〜4 は既存サービスに影響しない。実際に dev の backend / frontend とも 200 のままであることを確認した。
 

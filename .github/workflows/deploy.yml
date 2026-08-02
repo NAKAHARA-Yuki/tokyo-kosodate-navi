@@ -68,6 +68,50 @@ jobs:
             --project "$GCP_PROJECT_ID" --region "$REGION" --format='value(status.url)')
           echo "url=$URL" >> "$GITHUB_OUTPUT"
 
+  deploy-frontend-staging:
+    name: Deploy frontend to staging
+    # backend を先に出す。frontend は backend の URL を環境変数で受け取るため。
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: ${{ steps.deploy.outputs.url }}
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - id: deploy
+        name: Cloud Run にデプロイ
+        run: |
+          # --service-account を必ず明示する。省くと既定の compute SA になり、
+          # backend の run.invoker を持たないので ID トークン認証が通らない（ADR 0013）。
+          gcloud run deploy kosodate-frontend-staging \
+            --source ./frontend \
+            --project "$GCP_PROJECT_ID" \
+            --region "$REGION" \
+            --allow-unauthenticated \
+            --service-account "kosodate-frontend-staging@$GCP_PROJECT_ID.iam.gserviceaccount.com" \
+            --set-env-vars "BACKEND_URL=${{ needs.deploy-staging.outputs.url }}" \
+            --memory 512Mi --cpu 1 --min-instances 0 --max-instances 3 --timeout 120 \
+            --quiet
+          URL=$(gcloud run services describe kosodate-frontend-staging \
+            --project "$GCP_PROJECT_ID" --region "$REGION" --format='value(status.url)')
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      # frontend 経由で確認する。backend の allUsers を外したあとも通るように、
+      # backend を直接叩かず frontend のプロキシ（/api/...）を使う。
       - name: 環境が staging を指しているか確認
         run: |
           ENV=$(curl -fsS "${{ steps.deploy.outputs.url }}/api/healthz" | python3 -c 'import json,sys; print(json.load(sys.stdin)["env"])')
@@ -76,7 +120,8 @@ jobs:
 
   e2e-staging:
     name: E2E against staging (real data)
-    needs: deploy-staging
+    # 画面は frontend が持つので、frontend のデプロイ完了を待つ
+    needs: deploy-frontend-staging
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -97,9 +142,10 @@ jobs:
 
       # スタブではなく実際にデプロイされた staging を叩く。
       # BigQuery のスキーマ変更やデータの欠損は、ここで初めて検出できる。
+      # 対象は frontend。backend を直接見ると allUsers を外した時点で認証エラーになる。
       - name: E2E テスト（staging 実データ）
         env:
-          E2E_BASE_URL: ${{ needs.deploy-staging.outputs.url }}
+          E2E_BASE_URL: ${{ needs.deploy-frontend-staging.outputs.url }}
         run: pytest e2e
 
       - name: 失敗時のスクリーンショットを保存
@@ -124,6 +170,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -157,6 +205,47 @@ jobs:
             --project "$GCP_PROJECT_ID" --region "$REGION" --format='value(status.url)')
           echo "url=$URL" >> "$GITHUB_OUTPUT"
 
+  deploy-frontend-prod:
+    name: Deploy frontend to production
+    # backend を先に出す。frontend は backend の URL を環境変数で受け取るため。
+    needs: deploy-prod
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - id: deploy
+        name: Cloud Run にデプロイ
+        run: |
+          # --service-account を必ず明示する（理由は staging 側のコメント参照。ADR 0013）。
+          gcloud run deploy kosodate-frontend \
+            --source ./frontend \
+            --project "$GCP_PROJECT_ID" \
+            --region "$REGION" \
+            --allow-unauthenticated \
+            --service-account "kosodate-frontend-prod@$GCP_PROJECT_ID.iam.gserviceaccount.com" \
+            --set-env-vars "BACKEND_URL=${{ needs.deploy-prod.outputs.url }}" \
+            --labels "release=$(echo '${{ github.ref_name }}' | tr '.' '-' | tr '[:upper:]' '[:lower:]'),commit=${{ github.sha }}" \
+            --memory 512Mi --cpu 1 --min-instances 0 --max-instances 3 --timeout 120 \
+            --quiet
+          URL=$(gcloud run services describe kosodate-frontend \
+            --project "$GCP_PROJECT_ID" --region "$REGION" --format='value(status.url)')
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      # frontend 経由で確認する（backend の allUsers を外したあとも通るように）。
       - name: 本番のスモークテスト
         run: |
           BODY=$(curl -fsS "${{ steps.deploy.outputs.url }}/api/healthz")
@@ -164,4 +253,6 @@ jobs:
           ENV=$(echo "$BODY" | python3 -c 'import json,sys; print(json.load(sys.stdin)["env"])')
           [ "$ENV" = "prod" ] || { echo "❌ prod 以外を指しています"; exit 1; }
           curl -fsS "${{ steps.deploy.outputs.url }}/api/areas" > /dev/null
+          # 画面そのものが出ることも確認する（backend が API だけを返すようになったため）
+          curl -fsS "${{ steps.deploy.outputs.url }}/" > /dev/null
           echo "✅ 本番デプロイ完了 (${{ github.ref_name }}): ${{ steps.deploy.outputs.url }}"
