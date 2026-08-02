@@ -1,6 +1,6 @@
 # ADR 0013: backend への呼び出しをフロントエンドの SA に限定する
 
-- ステータス: 採用（**段階導入中。現時点で `allUsers` はまだ外していない**）
+- ステータス: 採用（**段階導入中。dev / staging は `allUsers` を剥がし済み。prod のみ残**）
 - 日付: 2026-08-01
 - 関連: [ADR 0008](0008-scoped-credentials.md) / issue #33
 
@@ -65,8 +65,8 @@ dev だけ `-dev` が付かないのは、dev しか無かった時期に作っ�
 | 5 | Next.js からサーバ側で ID トークン付き呼び出し | **完了**（2026-08-01。dev の実サービスで確認済み） |
 | 5.5 | backend から HTML 応答（`/` `/debug`）を無くす | **完了**（2026-08-01。issue #33） |
 | 6a | backend(**dev**) から `allUsers` を外す | **完了**（2026-08-02） |
-| 6b | backend(**staging**) から `allUsers` を外す | **保留。先に staging の frontend が要る**（下記） |
-| 6c | backend(**prod**) から `allUsers` を外す | **保留。今やると公開サービスが落ちる**（下記） |
+| 6b | backend(**staging**) から `allUsers` を外す | **完了**（2026-08-02） |
+| 6c | backend(**prod**) から `allUsers` を外す | **保留。prod の frontend が中身の無いまま**（下記） |
 
 5.5 により、backend が返すのは `/api/*` と `/api/healthz` だけになった。
 既存画面（cytoscape.js）は `frontend/public/debug.html` に移し、frontend の `/debug` が配信する。
@@ -81,27 +81,44 @@ backend を直接開くと 403。**ID トークン経由の SA 限定アクセ�
 IAM の伝播に **約90秒**かかった。外した直後は 200 のままなので、
 すぐ確認して「効いていない」と判断しないこと。
 
-### 6b / 6c を保留する理由
+### 6b の結果（staging、2026-08-02）
 
-**staging と prod には frontend サービスが存在しない。**
-`kosodate-frontend-dev` しか無く、`.github/workflows/deploy.yml` も
-backend（`--source ./app`）しかデプロイしていない。
+`deploy.yml` への frontend ジョブ追加と staging E2E の対象変更（#47）が入り、
+staging に UI が戻ったので実施した。外す前に frontend 経由で
+`/api/healthz` が `env: staging` を返すこと（＝ ID トークン認証が通っていること）を確認している。
+
+外したあとの実測:
+
+| 確認先 | 結果 |
+|---|---|
+| backend を直接（匿名） | **403** |
+| frontend `/` `/debug` | 200 |
+| frontend 経由 `/api/healthz` | `{"env":"staging","dataset":"gov_knowledge_db_staging"}` |
+| 詳細ページ（`benefit_id` に `+` を含む） | 200・本文が描画される |
+
+伝播は **約75秒**。dev（約90秒）と同様、外した直後は 200 のままなので待つこと。
+
+### 6c を保留する理由
+
+**prod の frontend サービスは中身がプレースホルダーのまま。**
+`deploy.yml` に prod の frontend ジョブは入った（#47）が、
+デプロイは `v*.*.*` タグの push で走るため、タグを切るまで反映されない。
 
 | 環境 | backend の `/` | 状態 |
 |---|---|---|
 | dev | — | frontend あり。6a 完了 |
-| staging | **404** | backend は HTML を返さなくなったのに frontend が無い。**UI が無い** |
+| staging | — | frontend あり。6b 完了 |
 | prod | 200 | 公開中。タグ（`v0.1.3`）が 5.5 より前なので、まだ HTML を返す旧リビジョン |
 
-- **staging**: `allUsers` を外すと CI の staging E2E が壊れる。
-  あれは staging **backend** の URL を直接叩いている（`E2E_BASE_URL`）
-- **prod**: 今 `allUsers` を外すと、公開サービスが即座に落ちる。
-  prod は旧リビジョンのままで UI を配信しており、代わりになる frontend が無い
+今 `allUsers` を外すと、公開サービスが即座に落ちる。
+prod は旧リビジョンのままで UI を配信しており、代わりになる frontend の中身が無い。
+
+**6c の前提はタグを切ること。** 順序は「タグ push → prod の frontend で動作確認 → `allUsers` を外す」。
 
 #### 2026-08-02 時点の進捗
 
-インフラ側は用意した（下記）。**残るのは `deploy.yml` への frontend ジョブ追加と
-staging E2E の対象変更で、これはコード側の作業。**
+インフラ側は用意した（下記）。`deploy.yml` への frontend ジョブ追加と
+staging E2E の対象変更は #47 で完了。
 
 作成済み:
 
@@ -115,15 +132,14 @@ staging E2E の対象変更で、これはコード側の作業。**
 `claude-dev` には staging / prod のフロントに**何も付けていない**。
 ADR 0008 のとおり、staging / prod への反映は CI 経由のみ。
 
-先に必要な作業:
+当初の作業計画と、その進み具合:
 
 1. `kosodate-frontend-staging` / `kosodate-frontend`（prod）を作る
    （[ADR 0008](0008-scoped-credentials.md) の初回ブートストラップ手順）— **完了**（2026-08-02, #46）
-2. `deploy.yml` に frontend のデプロイジョブを足す — **完了**（2026-08-02）
-3. staging E2E の対象を frontend の URL に変える — **完了**（2026-08-02）
-4. そのうえで staging → prod の順に `allUsers` を外す — 未着手（`claude-dev` では不可）
-
-**staging は既に UI が無い状態**なので、1〜3 は `allUsers` とは無関係に急ぐ。
+2. `deploy.yml` に frontend のデプロイジョブを足す — **完了**（2026-08-02, #47）
+3. staging E2E の対象を frontend の URL に変える — **完了**（2026-08-02, #47）
+4. staging の `allUsers` を外す — **完了**（2026-08-02。6b）
+5. `v*.*.*` タグを切って prod に frontend を出し、そのうえで prod の `allUsers` を外す — 未着手（6c）
 
 2・3 で入れた構成:
 
@@ -134,9 +150,8 @@ ADR 0008 のとおり、staging / prod への反映は CI 経由のみ。
 - staging E2E と prod スモークは **frontend 経由**で確認する
   （`<frontend>/api/healthz`）。backend を直接叩くと 4 のあと認証エラーになる
 
-1〜4 は既存サービスに影響しない。実際に dev の backend / frontend とも 200 のままであることを確認した。
-
-5 は `kosodate-frontend-dev` に実際にデプロイし、タグ付きURL経由で
+なお手順表の 5（ID トークン付き呼び出し）は
+`kosodate-frontend-dev` に実際にデプロイし、タグ付きURL経由で
 Server Component（直接呼び出し）・Route Handler プロキシの両方から
 backend の `/api/healthz` を ID トークン付きで呼べることを確認した
 （`env: dev` が正しく返る）。
@@ -265,9 +280,9 @@ Cloud Run のサービス間認証は ID トークン（メタデータサーバ
 ## 積み残し
 
 - ~~staging / prod のフロントエンドサービスはまだ無い~~
-  → 2026-08-02 に作成し、SA も環境ごとに分けた（上表）。
-  **ただし `deploy.yml` に frontend のデプロイジョブがまだ無く、中身はプレースホルダー画像のまま。**
-  これが入るまで staging / prod に UI は出ない
+  → 2026-08-02 に作成し、SA も環境ごとに分けた（上表）。`deploy.yml` へのジョブ追加も
+  #47 で完了し、staging には UI が出ている。
+  **prod だけは `v*.*.*` タグを切るまでプレースホルダー画像のまま。**
 - backend 側で「呼び出し元が想定の SA か」を検証してはいない。
   Cloud Run の IAM が手前で弾くので現状は不要だが、
   多層防御として ID トークンの検証を足す余地はある
