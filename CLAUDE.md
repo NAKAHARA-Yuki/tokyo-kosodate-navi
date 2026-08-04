@@ -106,6 +106,44 @@ GitHub の操作は `gh` を使う（`~/.git-credentials` のトークンを実�
 
 画面の確認が必要なときの手順（デプロイ・URL の伝え方・後片付け）は `deploy-dev` スキルを参照。
 
+**デプロイしたら既定 URL でも確認する。** `make deploy` 系は `--tag <ユーザー名> --no-traffic`
+なので、**リビジョンができたことと、トラフィックがそこへ向いたことは別**。
+タグ付き URL だけ見て「出た」と判断すると、既定 URL が古いリビジョンを配り続ける。
+実際に dev の frontend は数日間、既定 URL で Cloud Run のプレースホルダー画像を配信していた
+（prod の backend でも同じことが起きた）。向け直すなら `gcloud run services update-traffic --to-latest`。
+
+## 手で変えた設定はデプロイで元に戻る
+
+コンソールや `gcloud` で変えた設定のうち、`deploy.yml` / `Makefile` が同じ項目を
+書いているものは、**次のデプロイで必ず上書きされる**。「今は正しい」と
+「これからも正しい」は別。手で変えたら、設定しているコード側も同時に直すこと。
+
+実例: backend から `allUsers` を手で剥がして 403 を実測したのに、`deploy.yml` に
+`--allow-unauthenticated` が残っていたため、次のマージ3回で公開状態に戻っていた（#51）。
+
+権限によって、手で変えられる範囲が違う。
+
+| 誰 | 変えられるもの |
+|---|---|
+| owner（`nakahara.yuki.dev@`） | 全部。**IAM を触れるのはここだけ** |
+| `roles/editor` のメンバー | Cloud Run のサービス設定・環境変数・トラフィック・リビジョン |
+| `claude-dev`（手元・コンテナ） | dev の Cloud Run のみ |
+
+`roles/editor` には `run.services.setIamPolicy` が無いので、`allUsers` の付け外しは
+owner にしか実行できない。必要なら依頼すること。
+
+### 権限を確かめるときは「誰として成功したか」を先に見る
+
+`gcloud` は `GOOGLE_APPLICATION_CREDENTIALS` を見ない（[ADR 0013](docs/adr/0013-backend-sa-only-access.md)）。
+Makefile がそれを設定していても、`gcloud` は自分の認証ストアを使う。
+これを知らずに「`claude-dev` で回る」と誤った結論を出し、ADR を書き換える事故を起こしている。
+
+```bash
+curl -sS "https://oauth2.googleapis.com/tokeninfo?access_token=$(gcloud auth print-access-token)" | jq -r .email
+```
+
+`claude-dev` として試すなら `--impersonate-service-account` を使う。
+
 ## 落とし穴（踏んだもの）
 
 - **PROPERTY GRAPH には PRIMARY KEY が必須。** ノード/エッジの元テーブルに
