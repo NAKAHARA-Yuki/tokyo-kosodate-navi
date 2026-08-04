@@ -73,6 +73,7 @@ Server Component）が専用サービスアカウント（`kosodate-frontend@...
 | `routers/match.py` | `/api/user/profile`, `/api/benefits/match`（Phase2） |
 | `routers/timeline.py` | `/api/timeline`（Phase3） |
 | `routers/support.py` | `/api/support/draft-review`（Gemini, Phase2） |
+| `routers/meta.py` | `/api/data-source`（出典とデータの鮮度。全ページのフッターが使う） |
 
 整形で行っていること（詳細は `docs/data-model.md`）:
 - 本文に `タイトル;URL` 形式で埋め込まれたリンクを分離
@@ -110,6 +111,7 @@ backend へは ID トークン付きでサーバサイドから呼ぶ（ADR 0013
 | `frontend/lib/backend.ts` | backend を ID トークン付きで呼ぶ共通ヘルパー |
 | `frontend/lib/types.ts` | backend レスポンスに対応する型定義 |
 | `frontend/app/api/[...path]/route.ts` | backend への catch-all プロキシ（ブラウザから同一オリジンで叩けるようにする） |
+| `frontend/components/site-header.tsx` / `site-footer.tsx` | 全ページ共通のヘッダー・フッター。フッターは出典・免責・データの鮮度を出す（#57）。**出典と免責は backend の応答に依存させない**（backend が落ちても表示される） |
 | `frontend/components/dads/` | [デジタル庁デザインシステム](https://design.digital.go.jp/dads/react/)のコンポーネント（npm未公開のため個別コピー。詳細は `frontend/README.md`） |
 | `frontend/app/page.tsx` | トップページ（一覧ビュー）。`/api/benefits` を取得し、項目＋サマリーのカード一覧を表示する（グラフ表示はしない） |
 | `frontend/app/benefits/[id]/page.tsx` | 詳細ビュー。`/api/subgraph` から制度・条件・書類を取得して表示する |

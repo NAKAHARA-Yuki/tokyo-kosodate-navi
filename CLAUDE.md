@@ -41,7 +41,7 @@ src/            ETL とグラフ構築（ローカル or CI から実行）。et
   create_graph.sql/.py  PROPERTY GRAPH 定義
   verify_graph.py 動作検証クエリ
 app/            Cloud Run で動く FastAPI。**API専用でHTMLは返さない**（docs/adr/0013）。
-                 main.py はルーター登録のみで、実処理は routers/（benefits/match/timeline/support）に分割
+                 main.py はルーター登録のみで、実処理は routers/（benefits/match/timeline/support/meta）に分割
   config.py       環境（dev/staging/prod）ごとの設定。ETL からも参照する
   dependencies.py BigQuery / Gemini クライアントの生成
 frontend/       Cloud Run で動く Next.js（別サービス）。画面はすべてこちら

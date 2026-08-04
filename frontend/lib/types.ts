@@ -54,6 +54,16 @@ export type SubgraphNode = {
   };
 };
 
+// GET /api/data-source のレスポンス（app/routers/meta.py: get_data_source）。
+// フッターに出す出典とデータの鮮度。鮮度の取得に失敗した場合は各値が null になり、
+// 出典（source）だけが返る。
+export type DataSource = {
+  source: { name: string; url: string; publisher: string };
+  benefit_count: number | null;
+  area_count: number | null;
+  latest_update_date: string | null;
+};
+
 export type Subgraph = {
   nodes: SubgraphNode[];
   edges: { data: { id: string; source: string; target: string; label: string } }[];
