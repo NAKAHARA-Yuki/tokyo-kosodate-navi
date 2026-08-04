@@ -1,19 +1,21 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Noto_Sans_JP } from "next/font/google";
 import "./globals.css";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { fetchBackend } from "@/lib/backend";
 import type { DataSource } from "@/lib/types";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// デジタル庁デザインシステムのタイポグラフィは Noto Sans JP を前提にしている
+// （@digital-go-jp/tailwind-theme-plugin の --font-sans も 'Noto Sans JP' を先頭に置く）。
+// next/font はビルド時にフォントを取得して自前配信するため、ブラウザから Google へは
+// 一切リクエストが飛ばない（ADR 0010 の「実行時に外部CDNから取らない」と矛盾しない）。
+const notoSansJP = Noto_Sans_JP({
+  variable: "--font-noto-sans-jp",
+  // 日本語グリフは subsets では指定できない（next/font のメタデータに "japanese" が無い）。
+  // latin を指定したうえで、日本語は unicode-range 分割された残りのチャンクとして入る。
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  display: "swap",
 });
 
 const SITE_NAME = "子育て支援制度ナレッジグラフ";
@@ -52,10 +54,7 @@ export default async function RootLayout({
   const dataSource = await getDataSource();
 
   return (
-    <html
-      lang="ja"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
+    <html lang="ja" className={`${notoSansJP.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         <SiteHeader />
         {/* フッターを最下部に押し下げる。中身が短いページでも footer が浮かないようにする */}
