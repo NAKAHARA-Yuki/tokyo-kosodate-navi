@@ -6,6 +6,7 @@
 """
 
 import pytest
+from conftest import FakeQueryJob, FakeRow
 
 
 def benefit_row(**overrides):
@@ -387,6 +388,45 @@ class TestDataSource:
         assert body["source"]["name"]
         assert body["benefit_count"] is None
         assert body["latest_update_date"] is None
+
+    def test_failure_is_not_cached(self, client, monkeypatch):
+        """失敗を1時間キャッシュしない（BigQuery が復旧したら次のリクエストで出る）。
+
+        レビュー指摘（#69）。成功時と同じ期限を設定していたため、コールドスタート直後に
+        BigQuery が一瞬詰まっただけで、そのインスタンスは復旧後も1時間ずっと
+        件数と更新日を出さない状態になっていた。
+        """
+        import dependencies
+
+        calls = {"n": 0}
+
+        class Flaky:
+            def query(self, *args, **kwargs):
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    raise RuntimeError("BigQuery が一時的に落ちている")
+                return FakeQueryJob(
+                    [
+                        FakeRow(
+                            {
+                                "benefit_count": 7812,
+                                "area_count": 63,
+                                "latest_update_date": "2026-03-31",
+                            }
+                        )
+                    ]
+                )
+
+        monkeypatch.setattr(dependencies, "get_client", lambda: Flaky())
+
+        first = client.get("/api/data-source").json()
+        assert first["benefit_count"] is None, "1回目は失敗するので鮮度は返らない"
+        assert first["source"]["name"], "出典は失敗しても返る"
+
+        second = client.get("/api/data-source").json()
+        assert second["benefit_count"] == 7812, (
+            f"BigQuery が復旧しても鮮度が返りません（失敗がキャッシュされている）: {second}"
+        )
 
     def test_result_is_cached(self, client, bq):
         """全ページのフッターで使うので、毎回 BigQuery を叩かない。"""

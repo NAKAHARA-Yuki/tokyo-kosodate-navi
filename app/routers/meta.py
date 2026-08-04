@@ -60,11 +60,15 @@ def get_data_source():
     if _cache is None or now >= _cache_expires_at:
         try:
             _cache = _fetch_freshness()
+            # 成功したときだけ期限を延ばす。
+            _cache_expires_at = now + _CACHE_TTL_SECONDS
         except Exception:  # noqa: BLE001
             # 鮮度が取れないことを理由に出典・免責まで出せなくなるのは本末転倒。
-            # 失敗は握りつぶし、次のリクエストで再挑戦する。
+            # 失敗は握りつぶすが、**期限は延ばさない**。ここで延ばすと、
+            # コールドスタート直後に BigQuery が一瞬詰まっただけで、そのインスタンスは
+            # 復旧後も1時間ずっと件数と更新日を出さなくなる。
+            # トラフィックが少ないほどインスタンスは長生きするので、むしろ当たりやすい。
             _cache = {"benefit_count": None, "area_count": None, "latest_update_date": None}
-        _cache_expires_at = now + _CACHE_TTL_SECONDS
 
     return {
         "source": {"name": SOURCE_NAME, "url": SOURCE_URL, "publisher": SOURCE_PUBLISHER},
