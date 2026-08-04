@@ -70,8 +70,12 @@ Cloud Run のラベルに `release` と `commit` を入れ、GCP 側からも追
 
 - リポジトリ設定で **Squash merge のみ有効**
 - `main` の ruleset で 直 push 禁止 / squash のみ / CI 必須 / force push・削除の禁止
-  - approve の必須数は **0**。GitHub は自己承認を許可せず、ひとり体制だと
-    1 以上にすると自分の PR をマージできなくなるため。メンバーが増えたら 1 に戻す
+  - approve の必須数は **1**（2026-08-04 に 0 から変更）。
+    ひとり体制の間は 0 にしていた。GitHub は自己承認を許可しないため、
+    1 以上にすると自分の PR をマージできなくなるからである。
+    メンバーが増えたので、当初から予定していた本来の運用に戻した。
+    あわせて push で既存の approve を無効化する設定（`dismiss_stale_reviews_on_push`）と、
+    レビューコメントの解決を必須にする設定（`required_review_thread_resolution`）を入れている
 - Environments
   - `staging`: `main` ブランチからのみデプロイ可。承認なし
   - `production`: **`v*.*.*` タグからのみ**デプロイ可 + 承認者必須
