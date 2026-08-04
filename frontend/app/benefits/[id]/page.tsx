@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { fetchBackend } from "@/lib/backend";
-import type { Subgraph, SubgraphNode } from "@/lib/types";
+import type { BenefitLink, Subgraph, SubgraphNode } from "@/lib/types";
 import { Heading } from "@/components/dads/heading";
 import { ChipLabel } from "@/components/dads/chip-label";
 import { Link } from "@/components/dads/link";
@@ -15,6 +15,38 @@ async function getSubgraph(id: string): Promise<Subgraph | null> {
     throw new Error(`backend が ${res.status} を返しました`);
   }
   return res.json();
+}
+
+/** 同じ URI のリンクが related / form / embedded に重複して入っていることがあるのでまとめる。 */
+function dedupeLinks(...groups: (BenefitLink[] | undefined)[]): BenefitLink[] {
+  const seen = new Set<string>();
+  const result: BenefitLink[] = [];
+  for (const link of groups.flatMap((g) => g ?? [])) {
+    if (seen.has(link.uri)) continue;
+    seen.add(link.uri);
+    result.push(link);
+  }
+  return result;
+}
+
+function LinkList({ title, links }: { title: string; links: BenefitLink[] }) {
+  if (links.length === 0) return null;
+  return (
+    <section className="mt-6" data-testid="link-list">
+      <Heading size="18" hasChip className="mb-2">
+        {title}
+      </Heading>
+      <ul className="list-disc pl-6">
+        {links.map((l) => (
+          <li key={l.uri}>
+            <Link href={l.uri} target="_blank" rel="noopener noreferrer">
+              {l.title}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 /** 補助額・費用は制度ごとに書式が大きく異なるため数値化はせず、原文をそのまま出す。 */
@@ -70,6 +102,22 @@ export default async function BenefitDetail({ params }: { params: Promise<{ id: 
   const statuses = pick("Status");
   const documents = pick("Document");
 
+  // 対象者と条件が同じ文言になっている制度が 1,359 件ある（実データ）。同じ段落を2度出さない。
+  const conditionTexts: [string, string][] = [];
+  if (benefit.target_persons_text) {
+    conditionTexts.push(["対象になる方", benefit.target_persons_text]);
+  }
+  if (benefit.conditions_text && benefit.conditions_text !== benefit.target_persons_text) {
+    conditionTexts.push(["その他の条件", benefit.conditions_text]);
+  }
+
+  // 申請書式（form_links）は導線として重要なので独立させ、残りは「関連リンク」にまとめる。
+  const formLinks = dedupeLinks(benefit.form_links);
+  const formUris = new Set(formLinks.map((l) => l.uri));
+  const relatedLinks = dedupeLinks(benefit.related_links, benefit.embedded_links).filter(
+    (l) => !formUris.has(l.uri),
+  );
+
   return (
     <main className="mx-auto max-w-3xl p-6">
       <p className="mb-4">
@@ -102,6 +150,14 @@ export default async function BenefitDetail({ params }: { params: Promise<{ id: 
       {benefit.summary && <p className="whitespace-pre-line">{benefit.summary}</p>}
 
       <TextSection
+        title="制度の内容"
+        rows={[
+          ["詳しい説明", benefit.description],
+          ["利用のしかた", benefit.utilization],
+        ]}
+      />
+
+      <TextSection
         title="費用・助成額"
         rows={[
           ["助成額・支給額", benefit.monetary_support_text],
@@ -111,20 +167,43 @@ export default async function BenefitDetail({ params }: { params: Promise<{ id: 
         ]}
       />
 
-      {statuses.length > 0 && (
+      {(statuses.length > 0 || conditionTexts.length > 0) && (
         <section className="mt-6">
           <Heading size="18" hasChip className="mb-2">
             対象の条件
           </Heading>
-          <ul className="flex flex-wrap gap-2">
-            {statuses.map((s) => (
-              <li key={s.id}>
-                <ChipLabel variant="filled-1" color="cyan">
-                  {s.label}
-                </ChipLabel>
-              </li>
+
+          {statuses.length > 0 && (
+            <ul className="mb-4 flex flex-wrap gap-2">
+              {statuses.map((s) => (
+                <li key={s.id}>
+                  <ChipLabel variant="filled-1" color="cyan">
+                    {s.label}
+                  </ChipLabel>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* 条件の原文。チップは機械的に構造化できた条件だけで、所得制限や世帯要件などは
+              ここにしか書かれていない。要約や言い換えはせず原文のまま出す（ADR 0001）。 */}
+          <dl>
+            {conditionTexts.map(([label, value]) => (
+              <div key={label} className="mb-3">
+                <dt className="font-bold">{label}</dt>
+                <dd className="whitespace-pre-line">{value}</dd>
+              </div>
             ))}
-          </ul>
+          </dl>
+
+          {benefit.has_free_text_conditions && (
+            // 全体の約半数（3,808件）が該当する。チップだけを見て「自分は対象だ」と
+            // 判断させないための注意書き。
+            <p className="rounded-8 border border-yellow-600 bg-yellow-200 p-3">
+              この制度には、機械的に判定しきれない条件が残っています。上の条件だけで対象かどうかは決まりません。
+              必ず条件の原文と自治体の公式ページをご確認ください。
+            </p>
+          )}
         </section>
       )}
 
@@ -135,7 +214,16 @@ export default async function BenefitDetail({ params }: { params: Promise<{ id: 
           </Heading>
           <ul className="list-disc pl-6">
             {documents.map((d) => (
-              <li key={d.id}>{d.label}</li>
+              <li key={d.id}>
+                {/* 様式のURLを持つ書類は 462/4,919 件だけ。あるときはそのまま導線にする */}
+                {d.doc_url ? (
+                  <Link href={d.doc_url} target="_blank" rel="noopener noreferrer">
+                    {d.label}
+                  </Link>
+                ) : (
+                  d.label
+                )}
+              </li>
             ))}
           </ul>
           <p className="mt-2 text-solid-gray-700">
@@ -153,6 +241,8 @@ export default async function BenefitDetail({ params }: { params: Promise<{ id: 
         ]}
       />
 
+      <LinkList title="申請書式・電子申請" links={formLinks} />
+
       <TextSection
         title="問い合わせ先"
         rows={[
@@ -162,6 +252,8 @@ export default async function BenefitDetail({ params }: { params: Promise<{ id: 
           ["所在地", benefit.contact_address],
         ]}
       />
+
+      <LinkList title="関連リンク" links={relatedLinks} />
 
       {benefit.official_url && (
         <p className="mt-6">
