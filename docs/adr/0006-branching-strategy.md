@@ -76,6 +76,12 @@ Cloud Run のラベルに `release` と `commit` を入れ、GCP 側からも追
     メンバーが増えたので、当初から予定していた本来の運用に戻した。
     あわせて push で既存の approve を無効化する設定（`dismiss_stale_reviews_on_push`）と、
     レビューコメントの解決を必須にする設定（`required_review_thread_resolution`）を入れている
+  - 必須の CI チェックは4つ。`Lint & Unit/Integration Test` / `E2E (stub)` /
+    `Docker build` / `Frontend Lint & Build`
+
+> ruleset を API から更新するときは **`PUT /repos/{owner}/{repo}/rulesets/{id}`** を使う。
+> `PATCH` は 404 を返す（他の多くの GitHub API と違う点で、実際にここで詰まった）。
+> `rules` は差分ではなく**全体を送る**ので、`GET` した内容を書き換えて投げ直すこと。
 - Environments
   - `staging`: `main` ブランチからのみデプロイ可。承認なし
   - `production`: **`v*.*.*` タグからのみ**デプロイ可 + 承認者必須
