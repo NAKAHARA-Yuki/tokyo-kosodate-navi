@@ -36,7 +36,7 @@
 
 ```
 src/            ETL とグラフ構築（ローカル or CI から実行）。etl_to_bq.py はエントリポイントで、
-                 実処理は etl_util/etl_normalize/etl_documents/etl_statuses/etl_graph/etl_schema/etl_load に分割
+                 実処理は etl_util/etl_normalize/etl_documents/etl_statuses/etl_graph/etl_schema/etl_quality/etl_load に分割
   age_rules.py    対象年齢をテキストから推定するルール（正規表現のみ）
   create_graph.sql/.py  PROPERTY GRAPH 定義
   verify_graph.py 動作検証クエリ

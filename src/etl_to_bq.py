@@ -13,6 +13,7 @@ BigQuery にロードする。
 - etl_statuses.py  : AGE / LOCATION / TAG_* の status ノード生成
 - etl_graph.py     : benefits 行の構築・スキルツリー生成・全体変換（transform）
 - etl_schema.py    : BigQuery のテーブルスキーマ定義
+- etl_quality.py   : ロード前のデータ品質チェック
 - etl_load.py      : BigQuery へのロード
 
 このファイルはエントリポイント（`python src/etl_to_bq.py`）として、
@@ -34,6 +35,7 @@ from google.cloud import bigquery  # noqa: E402
 
 from etl_graph import transform  # noqa: E402
 from etl_load import ensure_dataset, load_tables  # noqa: E402
+from etl_quality import run_quality_checks  # noqa: E402
 
 SOURCE_URL = "https://data.storage.data.metro.tokyo.lg.jp/digitalservice/130001_kosodateshienseido_tokyo.json"
 
@@ -72,6 +74,12 @@ def main():
 
     client = bigquery.Client(project=project_id, location=LOCATION)
     ensure_dataset(client, project_id)
+
+    # ロードの**前**に品質を見る。load_tables() はテーブルごとに WRITE_TRUNCATE するため、
+    # 途中で落ちると「benefits だけ新しく statuses は古い」状態が残る。
+    # 書く前に落とせばその状態自体を作らずに済む（issue #62）。
+    run_quality_checks(client, project_id, tables)
+
     load_tables(client, project_id, tables)
 
     print("[main] ETL completed successfully", flush=True)
