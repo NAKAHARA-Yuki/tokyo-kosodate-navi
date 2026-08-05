@@ -110,6 +110,9 @@ class TestMatchBenefits:
         )
         row["effective_min_age_months"] = row.pop("min_age_months")
         row["effective_max_age_months"] = row.pop("max_age_months")
+        # 属性による並び替え・理由付けで参照する（app/routers/match.py）
+        row["is_single_parent_target"] = False
+        row["is_disability_target"] = False
         row.update(overrides)
         return row
 
@@ -124,6 +127,53 @@ class TestMatchBenefits:
         reasons = body["benefits"][0]["match_reasons"]
         assert any("台東区" in r for r in reasons)
         assert any("40" in r for r in reasons)
+
+    def test_single_parent_reason_is_added(self, client, bq):
+        """ひとり親向けに分類されている制度に理由が付くこと（issue #77）。"""
+        bq.set_rows([self.match_row(is_single_parent_target=True)])
+        res = client.get(
+            "/api/benefits/match?area_code=131067&is_single_parent=true&include_skill_tree=false"
+        )
+        reasons = res.json()["benefits"][0]["match_reasons"]
+        assert any("ひとり親" in r for r in reasons), reasons
+
+    def test_disability_reason_is_added(self, client, bq):
+        bq.set_rows([self.match_row(is_disability_target=True)])
+        res = client.get("/api/benefits/match?area_code=131067&has_disability=true&include_skill_tree=false")
+        reasons = res.json()["benefits"][0]["match_reasons"]
+        assert any("障がい" in r for r in reasons), reasons
+
+    def test_attribute_reason_is_not_added_when_not_requested(self, client, bq):
+        """属性を指定していない人に、その属性の理由を出さない。"""
+        bq.set_rows([self.match_row(is_single_parent_target=True)])
+        res = client.get("/api/benefits/match?area_code=131067&include_skill_tree=false")
+        reasons = res.json()["benefits"][0]["match_reasons"]
+        assert not any("ひとり親" in r for r in reasons), reasons
+
+    def test_attributes_do_not_filter_out_benefits(self, client, bq):
+        """属性は並び順と理由にだけ使い、絞り込みには使わない。
+
+        該当しない人からこれらの制度を隠すと「対象なのに出ない」を作る。
+        分類コードと本文の一致率は90%で、残り10%の取りこぼしの方が害が大きい。
+        """
+        bq.set_rows([self.match_row(is_single_parent_target=False)])
+        res = client.get(
+            "/api/benefits/match?area_code=131067&is_single_parent=true&include_skill_tree=false"
+        )
+        assert res.json()["count"] == 1, "該当しない制度も結果から消してはいけない"
+        assert "target_codes" not in bq.last_query.split("WHERE")[-1], (
+            f"分類コードが WHERE 句に入っています: {bq.last_query}"
+        )
+
+    def test_orders_matching_benefits_first(self, client, bq):
+        """属性を指定したときだけ並び替えに使う。"""
+        bq.set_rows([self.match_row()])
+        client.get("/api/benefits/match?area_code=131067&is_single_parent=true&include_skill_tree=false")
+        assert "is_single_parent_target DESC" in bq.last_query
+
+        bq.set_rows([self.match_row()])
+        client.get("/api/benefits/match?area_code=131067&include_skill_tree=false")
+        assert "is_single_parent_target DESC" not in bq.last_query
 
     def test_inferred_age_is_flagged_in_reason(self, client, bq):
         """推定値で当たった場合はユーザーに断定的に見せない。"""
