@@ -104,6 +104,22 @@ def search_benefits(
     ]
 
 
+def _links(rows) -> list[dict]:
+    """ARRAY<STRUCT<title, uri>> を JSON に載る形に整える。
+
+    uri の無い要素は捨てる（リンクとして使えないため）。title が空なら uri を表示名にする。
+    同じ uri が related / embedded の両方に出ることがあるので、ここでは重複を残し、
+    まとめるかどうかは表示側に任せる。
+    """
+    result = []
+    for row in rows or []:
+        uri = row.get("uri")
+        if not uri:
+            continue
+        result.append({"title": row.get("title") or uri, "uri": uri})
+    return result
+
+
 @router.get("/api/subgraph")
 def get_subgraph(benefit_id: str = Query(..., description="中心にする制度のID")):
     # BigQuery Graph (GQL) は Enterprise 予約が必須になったため通常 SQL で書いている
@@ -112,6 +128,16 @@ def get_subgraph(benefit_id: str = Query(..., description="中心にする制度
     query = f"""
         SELECT
           b.benefit_id AS benefit_id, b.title AS title, b.category AS category, b.summary AS summary,
+          -- 詳細ページの本体。summary は一覧と同じ要約なので、これが無いと
+          -- 「詳細ページなのに一覧と同じことしか書いていない」状態になる（実データの97%が description を持つ）
+          b.description AS description, b.utilization AS utilization,
+          -- 機械判定しきれない条件の原文。has_free_text_conditions=true は約半数（3,808件）あり、
+          -- これを出さないと所得制限などを知らないまま「自分は対象だ」と思い込ませる（CLAUDE.md）
+          b.conditions_text AS conditions_text, b.target_persons_text AS target_persons_text,
+          b.has_free_text_conditions AS has_free_text_conditions,
+          -- 本文に埋め込まれていたリンクを ETL が分離したもの。申請書式への導線になる
+          b.related_links AS related_links, b.form_links AS form_links,
+          b.embedded_links AS embedded_links,
           b.area_name AS area_name, b.min_age_months AS min_age_months, b.max_age_months AS max_age_months,
           b.cost_text AS cost_text, b.cost_conditions_text AS cost_conditions_text,
           b.monetary_support_text AS monetary_support_text, b.materially_support_text AS materially_support_text,
@@ -123,7 +149,7 @@ def get_subgraph(benefit_id: str = Query(..., description="中心にする制度
           b.electronic_submission AS electronic_submission,
           b.regulation_name AS regulation_name, b.update_date AS update_date,
           s.status_id AS status_id, s.name AS status_name, s.type AS status_type,
-          d.doc_id AS doc_id, d.doc_name AS doc_name
+          d.doc_id AS doc_id, d.doc_name AS doc_name, d.doc_url AS doc_url
         FROM `{PROJECT_ID}.{DATASET_ID}.benefits` b
         LEFT JOIN `{PROJECT_ID}.{DATASET_ID}.benefit_requires_status` brs
           ON brs.benefit_id = b.benefit_id
@@ -158,6 +184,14 @@ def get_subgraph(benefit_id: str = Query(..., description="中心にする制度
             "type": "Benefit",
             "category": first["category"],
             "summary": first["summary"],
+            "description": first["description"],
+            "utilization": first["utilization"],
+            "conditions_text": first["conditions_text"],
+            "target_persons_text": first["target_persons_text"],
+            "has_free_text_conditions": first["has_free_text_conditions"],
+            "related_links": _links(first["related_links"]),
+            "form_links": _links(first["form_links"]),
+            "embedded_links": _links(first["embedded_links"]),
             "area_name": first["area_name"],
             "min_age_months": first["min_age_months"],
             "max_age_months": first["max_age_months"],
@@ -212,7 +246,15 @@ def get_subgraph(benefit_id: str = Query(..., description="中心にする制度
             doc_node_id = f"doc:{r['doc_id']}"
             nodes.setdefault(
                 doc_node_id,
-                {"data": {"id": doc_node_id, "label": r["doc_name"], "type": "Document"}},
+                {
+                    "data": {
+                        "id": doc_node_id,
+                        "label": r["doc_name"],
+                        "type": "Document",
+                        # 書類名に紐づく様式のURL。持っているのは 462/4,919 件だけ
+                        "doc_url": r["doc_url"],
+                    }
+                },
             )
             edge_id = f"{benefit_node_id}->{doc_node_id}"
             if edge_id not in edge_ids:
