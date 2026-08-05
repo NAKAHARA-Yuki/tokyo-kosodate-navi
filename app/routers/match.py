@@ -4,12 +4,14 @@
 - /api/benefits/match : 属性から対象制度を一括取得（マッチ理由付き）
 """
 
+from datetime import date
+
 import dependencies
 from config import DATASET_ID, PROJECT_ID
 from fastapi import APIRouter, HTTPException, Query
 from google.cloud import bigquery
 from pydantic import BaseModel, Field
-from queries import AGE_SOURCE_ORDER_BY, age_filter_sql
+from queries import AGE_SOURCE_ORDER_BY, ages_filter_sql
 
 router = APIRouter()
 
@@ -24,11 +26,39 @@ TARGET_CODE_SINGLE_PARENT = "088"
 TARGET_CODE_DISABILITY = "090"
 
 
+def months_between(birth: date, today: date | None = None) -> int:
+    """生年月日から満月齢を求める。誕生日が来ていない月は繰り上げない。"""
+    today = today or date.today()
+    months = (today.year - birth.year) * 12 + (today.month - birth.month)
+    if today.day < birth.day:
+        months -= 1
+    return max(months, 0)
+
+
+class ChildProfile(BaseModel):
+    """子ども1人分。**生年月日を正とする。**
+
+    月齢は時間が経てば変わるので、保存すると古くなる。マイナンバー由来のデータでは
+    生年月日が取れる想定なので、そちらを持ち、月齢は都度計算する（issue #75）。
+    生年月日が分からない場合のために月齢も受け取れるようにしてある。
+    """
+
+    birth_date: date | None = Field(default=None, description="生年月日")
+    age_months: int | None = Field(default=None, ge=0, le=300, description="月齢（生年月日が不明なとき）")
+
+    def resolved_age_months(self) -> int | None:
+        if self.birth_date is not None:
+            return months_between(self.birth_date)
+        return self.age_months
+
+
 class UserProfile(BaseModel):
     """設定画面で登録するユーザー属性。チャットではなく選択式フォームからの入力を想定。"""
 
     area_code: str | None = Field(default=None, description="居住地の市区町村コード")
-    child_age_months: int | None = Field(default=None, ge=0, le=300, description="子どもの月齢")
+    # きょうだいがいるのが普通なので配列で持つ。実データには第2子以降を条件に含む制度が
+    # 306件（3.9%）ある。単数で持つと利用履歴（#31）も子ごとに持てない。
+    children: list[ChildProfile] = Field(default_factory=list, description="子どもの一覧")
     is_pregnant: bool = Field(default=False, description="妊娠中かどうか")
     is_single_parent: bool = Field(default=False, description="ひとり親世帯かどうか")
     has_disability: bool = Field(default=False, description="障がいのあるお子さんがいるか")
@@ -55,21 +85,30 @@ def save_user_profile(profile: UserProfile):
             raise HTTPException(status_code=400, detail="unknown area_code")
         area_name = rows[0]["area_name"]
 
-    age_label = None
-    if profile.child_age_months is not None:
-        years, months = divmod(profile.child_age_months, 12)
-        age_label = f"{years}歳{months}か月" if months else f"{years}歳"
+    children = []
+    for child in profile.children:
+        months = child.resolved_age_months()
+        label = None
+        if months is not None:
+            years, rest = divmod(months, 12)
+            label = f"{years}歳{rest}か月" if rest else f"{years}歳"
+        children.append({"age_months": months, "age_label": label})
 
     return {
-        "profile": profile.model_dump(),
-        "resolved": {"area_name": area_name, "child_age_label": age_label},
+        "profile": profile.model_dump(mode="json"),
+        "resolved": {"area_name": area_name, "children": children},
     }
 
 
 @router.get("/api/benefits/match")
 def match_benefits(
     area_code: str | None = Query(default=None, description="居住地の市区町村コード"),
-    child_age_months: int | None = Query(default=None, ge=0, le=300, description="子どもの月齢"),
+    child_age_months: list[int] = Query(
+        default=[], description="子どもの月齢。きょうだいの分だけ繰り返し指定できる"
+    ),
+    child_birth_date: list[date] = Query(
+        default=[], description="子どもの生年月日。指定するとサーバ側で月齢に換算する"
+    ),
     is_pregnant: bool = Query(default=False),
     is_single_parent: bool = Query(default=False, description="ひとり親世帯かどうか"),
     has_disability: bool = Query(default=False, description="障がいのあるお子さんがいるか"),
@@ -94,10 +133,13 @@ def match_benefits(
         conditions.append("(area_code = @area_code OR area_code = '130001')")
         params.append(bigquery.ScalarQueryParameter("area_code", "STRING", area_code))
 
-    if child_age_months is not None:
-        # 妊娠中なら「妊娠期の制度」も対象に加える
-        conditions.append(age_filter_sql("age", include_prenatal=is_pregnant))
-        params.append(bigquery.ScalarQueryParameter("age", "INT64", child_age_months))
+    # 生年月日と月齢の両方を受け取れる。生年月日の方が正（月齢は時間で変わるため）。
+    ages = [months_between(b) for b in child_birth_date] + list(child_age_months)
+    if ages:
+        # 妊娠中なら「妊娠期の制度」も対象に加える。
+        # きょうだいのいずれかが当たれば結果に含める。
+        conditions.append(ages_filter_sql("ages", include_prenatal=is_pregnant))
+        params.append(bigquery.ArrayQueryParameter("ages", "INT64", ages))
     elif is_pregnant:
         conditions.append("is_prenatal")
 
@@ -139,14 +181,16 @@ def match_benefits(
             reasons.append(
                 "東京都全域の制度" if r["area_code"] == "130001" else f"お住まいの{r['area_name']}が対象"
             )
-        if child_age_months is not None and (
-            r["effective_min_age_months"] is not None or r["effective_max_age_months"] is not None
-        ):
-            lo = r["effective_min_age_months"]
-            hi = r["effective_max_age_months"]
+        lo = r["effective_min_age_months"]
+        hi = r["effective_max_age_months"]
+        # どの子が当たったかを返す。きょうだいがいると「上の子だけ対象」が普通にあるため、
+        # 「対象です」とだけ言われても誰のことか分からない。
+        matched = [a for a in ages if (lo is None or lo <= a) and (hi is None or hi >= a)]
+        if ages and (lo is not None or hi is not None) and matched:
             span = f"{lo if lo is not None else '-'}〜{hi if hi is not None else '-'}ヶ月"
             suffix = "（対象年齢は本文からの推定）" if r["age_source"] == "inferred" else ""
-            reasons.append(f"お子さんの月齢{child_age_months}が対象範囲{span}に該当{suffix}")
+            who = "・".join(f"月齢{a}" for a in matched)
+            reasons.append(f"お子さん（{who}）が対象範囲{span}に該当{suffix}")
         if is_pregnant and r["is_prenatal"]:
             reasons.append("妊娠中の方が対象")
         # 分類コードは元データの値だが、コードが何を指すかの対応づけはこちらの推定
@@ -166,6 +210,7 @@ def match_benefits(
                 "min_age_months": r["effective_min_age_months"],
                 "max_age_months": r["effective_max_age_months"],
                 "age_source": r["age_source"],
+                "matched_child_age_months": matched,
                 "is_free": r["is_free"],
                 "has_amount_info": bool(r["monetary_support_text"]),
                 "electronic_submission": r["electronic_submission"],

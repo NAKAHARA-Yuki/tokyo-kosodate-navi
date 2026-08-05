@@ -182,6 +182,41 @@ class TestMatchBenefits:
         reasons = res.json()["benefits"][0]["match_reasons"]
         assert any("推定" in r for r in reasons)
 
+    def test_matches_any_of_the_children(self, client, bq):
+        """きょうだいのいずれかが当たれば結果に含める（issue #75）。"""
+        bq.set_rows([])
+        client.get("/api/benefits/match?child_age_months=3&child_age_months=140&include_skill_tree=false")
+        assert "UNNEST(@ages)" in bq.last_query, bq.last_query
+        assert bq.last_params()["ages"] == [3, 140]
+
+    def test_reports_which_child_matched(self, client, bq):
+        """どの子が当たったかを返す。「上の子だけ対象」が普通にあるため。"""
+        bq.set_rows([self.match_row(effective_min_age_months=0, effective_max_age_months=36)])
+        res = client.get(
+            "/api/benefits/match?child_age_months=3&child_age_months=140&include_skill_tree=false"
+        )
+        item = res.json()["benefits"][0]
+        assert item["matched_child_age_months"] == [3], item
+        assert any("月齢3" in r for r in item["match_reasons"])
+        assert not any("月齢140" in r for r in item["match_reasons"])
+
+    def test_birth_date_is_accepted(self, client, bq):
+        """生年月日で指定するとサーバ側で月齢に換算する。"""
+        from datetime import date
+
+        from routers.match import months_between
+
+        bq.set_rows([])
+        birth = date(2019, 6, 1)
+        client.get(f"/api/benefits/match?child_birth_date={birth.isoformat()}&include_skill_tree=false")
+        assert bq.last_params()["ages"] == [months_between(birth)]
+
+    def test_single_child_still_works(self, client, bq):
+        """子ども1人だけの指定（従来の呼び方）も通る。"""
+        bq.set_rows([self.match_row()])
+        res = client.get("/api/benefits/match?child_age_months=40&include_skill_tree=false")
+        assert res.json()["count"] == 1
+
     def test_includes_tokyo_wide_benefits(self, client, bq):
         """東京都全域の制度(130001)も対象に含める。"""
         bq.set_rows([])
@@ -207,15 +242,42 @@ class TestUserProfile:
         bq.set_rows([{"area_name": "台東区"}])
         res = client.post(
             "/api/user/profile",
-            json={"area_code": "131067", "child_age_months": 18},
+            json={"area_code": "131067", "children": [{"age_months": 18}]},
         )
         assert res.status_code == 200
-        assert res.json()["resolved"] == {"area_name": "台東区", "child_age_label": "1歳6か月"}
+        assert res.json()["resolved"] == {
+            "area_name": "台東区",
+            "children": [{"age_months": 18, "age_label": "1歳6か月"}],
+        }
 
     def test_exact_years_label(self, client, bq):
         bq.set_rows([{"area_name": "台東区"}])
-        res = client.post("/api/user/profile", json={"area_code": "131067", "child_age_months": 24})
-        assert res.json()["resolved"]["child_age_label"] == "2歳"
+        res = client.post("/api/user/profile", json={"area_code": "131067", "children": [{"age_months": 24}]})
+        assert res.json()["resolved"]["children"][0]["age_label"] == "2歳"
+
+    def test_multiple_children(self, client, bq):
+        """きょうだいをまとめて登録できる（issue #75）。"""
+        bq.set_rows([{"area_name": "台東区"}])
+        res = client.post(
+            "/api/user/profile",
+            json={"area_code": "131067", "children": [{"age_months": 18}, {"age_months": 96}]},
+        )
+        labels = [c["age_label"] for c in res.json()["resolved"]["children"]]
+        assert labels == ["1歳6か月", "8歳"]
+
+    def test_birth_date_is_converted_to_months(self, client, bq):
+        """生年月日を正とする。月齢は時間で変わるので保存すると古くなる。"""
+        from datetime import date
+
+        from routers.match import months_between
+
+        bq.set_rows([{"area_name": "台東区"}])
+        birth = date(2019, 6, 1)
+        res = client.post(
+            "/api/user/profile",
+            json={"area_code": "131067", "children": [{"birth_date": birth.isoformat()}]},
+        )
+        assert res.json()["resolved"]["children"][0]["age_months"] == months_between(birth)
 
     def test_unknown_area_rejected(self, client, bq):
         bq.set_rows([])

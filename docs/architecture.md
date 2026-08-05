@@ -71,7 +71,7 @@ Server Component）が専用サービスアカウント（`kosodate-frontend@...
 | `dependencies.py` | BigQuery / Gemini クライアントの生成 |
 | `queries.py` | 複数ルーターで共通の年齢フィルタSQL |
 | `routers/benefits.py` | `/api/categories`, `/api/areas`, `/api/benefits`, `/api/subgraph` |
-| `routers/match.py` | `/api/user/profile`, `/api/benefits/match`（Phase2） |
+| `routers/match.py` | `/api/user/profile`, `/api/benefits/match`（Phase2）。プロフィールは**子ども複数**に対応し、生年月日を正とする（#75） |
 | `routers/timeline.py` | `/api/timeline`（Phase3） |
 | `routers/support.py` | `/api/support/draft-review`（Gemini, Phase2） |
 

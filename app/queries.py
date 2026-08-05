@@ -26,3 +26,19 @@ def age_filter_sql(param_name: str, include_prenatal: bool = False) -> str:
     if include_prenatal:
         return f"(({clause}) OR is_prenatal)"
     return f"({clause})"
+
+
+def ages_filter_sql(param_name: str, include_prenatal: bool = False) -> str:
+    """`@{param_name}`（月齢の配列）の **いずれかの子** が範囲内かを判定するSQL断片。
+
+    きょうだいがいる場合、上の子でも下の子でも当たる制度は結果に含める。
+    どの子が当たったかは Python 側で突き合わせて返す（`matched_children`）。
+    """
+    clause = (
+        f"EXISTS(SELECT 1 FROM UNNEST(@{param_name}) AS a "
+        "WHERE (effective_min_age_months IS NULL OR effective_min_age_months <= a) "
+        "AND (effective_max_age_months IS NULL OR effective_max_age_months >= a))"
+    )
+    if include_prenatal:
+        return f"(({clause}) OR is_prenatal)"
+    return f"({clause})"
