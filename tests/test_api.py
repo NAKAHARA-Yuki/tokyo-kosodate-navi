@@ -418,7 +418,9 @@ class TestDraftReview:
 
         monkeypatch.setattr(dependencies, "_build_genai_client", lambda: FakeGenaiClient())
 
-        bq.set_rows(
+        # 1本目が制度の取得、2本目がキャッシュ参照（explain のみ）。
+        # 同じ行を全クエリに返すとキャッシュヒット扱いになり、生成そのものが走らない。
+        bq.set_rows_sequence(
             [
                 {
                     "title": "児童手当",
@@ -432,7 +434,8 @@ class TestDraftReview:
                     "procedure_method": "郵送",
                     "official_url": "https://example.com",
                 }
-            ]
+            ],
+            [],
         )
         payload = {"benefit_id": "x", "mode": mode}
         if mode == "review":

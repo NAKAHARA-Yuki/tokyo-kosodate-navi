@@ -44,6 +44,7 @@ app/            Cloud Run で動く FastAPI。**API専用でHTMLは返さない*
                  main.py はルーター登録のみで、実処理は routers/（benefits/match/timeline/support/meta）に分割
   config.py       環境（dev/staging/prod）ごとの設定。ETL からも参照する
   dependencies.py BigQuery / Gemini クライアントの生成
+  explanation_cache.py  やさしい解説の生成結果を BigQuery に保存して使い回す（docs/adr/0015）
 frontend/       Cloud Run で動く Next.js（別サービス）。画面はすべてこちら
   lib/backend.ts  backend を ID トークン付きで呼ぶ（サーバ側からのみ。docs/adr/0013）
   app/api/[...path]/route.ts  backend への catch-all プロキシ
@@ -163,6 +164,10 @@ curl -sS "https://oauth2.googleapis.com/tokeninfo?access_token=$(gcloud auth pri
   `extract_links()` で全テキスト列から分離済み。新しいテキスト列を追加するときも通すこと。
 - **必要書類欄を読点「、」で分割してはいけない。** 一文が途中で切れて意味不明な書類ノードになる。
 - **Gemini は `thinking_level` と `thinking_budget` を併用できない**（400 になる）。
+- **BigQuery にストリーミング挿入した行は、直後に UPDATE / DELETE できない**（400 になる。
+  `would affect rows in the streaming buffer`）。`insert_rows_json` で書いたものを
+  すぐ消せる前提のコードを書かないこと。全消しが要るなら `DROP TABLE`
+  （やさしい解説のキャッシュがこれに該当する。[docs/adr/0015](docs/adr/0015-cache-ai-explanations.md)）。
 - **Cloud Run で `/healthz` は使えない。** Google Frontend が手前で横取りするため
   コンテナまでリクエストが届かず、Google の 404 HTML が返る（Cloud Run のログにも残らない）。
   FastAPI に登録されていても無関係。ヘルスチェックは `/api/healthz` に置いている。

@@ -4,7 +4,10 @@
 routers/match.py）。ここで扱うのは「取得済みの制度情報を分かりやすく言い換える」ことだけ。
 """
 
+from datetime import UTC, datetime
+
 import dependencies
+import explanation_cache
 from config import DATASET_ID, PROJECT_ID
 from fastapi import APIRouter, HTTPException
 from google.cloud import bigquery
@@ -63,6 +66,28 @@ def draft_review(req: DraftReviewRequest):
         if value
     )
 
+    def payload(text, generated_at, cached):
+        return {
+            "benefit_id": req.benefit_id,
+            "title": b["title"],
+            "mode": req.mode,
+            "result": text,
+            "official_url": b["official_url"],
+            # キャッシュから返す場合も必ず付ける（AI生成であることは古くならない）。
+            "disclaimer": "この文章はAIが制度情報をもとに生成したものです。最終的な判断は自治体の公式情報をご確認ください。",
+            "generated_at": generated_at,
+            "cached": cached,
+        }
+
+    # やさしい解説は同じ制度に対して何度でも同じものになるので、一度作ったら使い回す（issue #68）。
+    # 添削（review）の入力は利用者が書いた文章で個人情報が入りうるため、読みも書きもしない。
+    key = None
+    if req.mode != "review":
+        key = explanation_cache.cache_key(req.benefit_id, facts, GEMINI_MODEL)
+        hit = explanation_cache.lookup(key)
+        if hit:
+            return payload(hit["result"], hit["generated_at"], cached=True)
+
     if req.mode == "review":
         if not req.draft:
             raise HTTPException(status_code=400, detail="draft is required for review mode")
@@ -106,11 +131,9 @@ def draft_review(req: DraftReviewRequest):
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=503, detail=f"Gemini呼び出しに失敗しました: {exc}") from exc
 
-    return {
-        "benefit_id": req.benefit_id,
-        "title": b["title"],
-        "mode": req.mode,
-        "result": text,
-        "official_url": b["official_url"],
-        "disclaimer": "この文章はAIが制度情報をもとに生成したものです。最終的な判断は自治体の公式情報をご確認ください。",
-    }
+    generated_at = (
+        explanation_cache.store(key, req.benefit_id, facts, GEMINI_MODEL, text)
+        if key
+        else datetime.now(UTC).isoformat()
+    )
+    return payload(text, generated_at, cached=False)
