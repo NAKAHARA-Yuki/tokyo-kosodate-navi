@@ -88,6 +88,12 @@ PROPERTY GRAPH: `kosodate_graph`
 `contact_name` / `contact_phone` / `contact_email` / `contact_address` / `contact_zip` /
 `official_url` / `official_title` / `regulation_name` / `update_date`(DATE)
 
+`update_date` は自治体側が制度情報を更新した日で、**8.5%（664件）が NULL**。
+値の範囲は 2003-10-31 〜 2025-06-12（dev で実測）。
+9割以上は埋まっているので `MAX(update_date)` が NULL になることはないが、
+制度単位で「いつ時点の情報か」を出すときは欠損を考慮すること。
+なお **ETL を回した日ではない**ので、データの取り込み時期の指標としては使えない。
+
 ### 本文とリンク
 
 | カラム | 型 | 備考 |
