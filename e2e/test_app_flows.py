@@ -5,6 +5,7 @@
 ユニットテストをすり抜けて本番に出たため、画面操作で検証する。
 """
 
+import os
 import re
 
 import pytest
@@ -87,6 +88,64 @@ class TestSourceAndDisclaimer:
         top_page.locator("header a").first.click()
         top_page.wait_for_url(re.compile(r"/$"))
         expect(top_page.locator("main ul li").first).to_be_visible()
+
+
+class TestBenefitDetail:
+    """詳細ページに制度の本文・条件の原文・申請リンクが出ること（issue #63）。
+
+    以前は `/api/subgraph` が summary しか返しておらず、詳細ページに出ている説明文が
+    一覧のカードと同じだった。条件の原文に至っては一切出ておらず、
+    構造化された条件チップだけを見て「自分は対象だ」と誤解させる状態だった。
+
+    ここで見る項目（条件の原文・申請書式・要確認の注意書き）は、**制度によって有無が違う**。
+    実データでは target_persons_text は84%、form_links に至っては14%しか持っていない。
+    一覧の先頭に来る制度がそれらを持っている保証はないため、スタブ限定で実行する
+    （デプロイ先に対しては `TestSmoke` が最低限の確認を担う）。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _stub_only(self):
+        if os.environ.get("E2E_BASE_URL"):
+            pytest.skip("項目の有無が制度ごとに違うため、実データに対しては実行しない")
+
+    @pytest.fixture
+    def detail_page(self, page, base_url):
+        page.set_default_timeout(15_000)
+        page.goto(base_url)
+        page.wait_for_selector("main ul li")
+        page.locator("main ul li a").first.click()
+        page.wait_for_url(re.compile(r"/benefits/"))
+        page.wait_for_selector("main")
+        return page
+
+    def test_shows_the_full_description(self, detail_page):
+        """一覧の要約ではなく、制度の本文が出ること。"""
+        expect(detail_page.locator("main")).to_contain_text("制度の内容")
+
+    def test_shows_raw_condition_text(self, detail_page):
+        """条件の原文（対象になる方）が出ること。この issue の本題。"""
+        expect(detail_page.locator("main")).to_contain_text("対象になる方")
+
+    def test_warns_when_conditions_are_not_machine_checkable(self, detail_page):
+        """has_free_text_conditions=true のとき、チップだけで判断させない注意書きを出す。"""
+        expect(detail_page.locator("main")).to_contain_text("機械的に判定しきれない条件")
+
+    def test_application_form_link_is_shown(self, detail_page):
+        expect(detail_page.locator("main")).to_contain_text("申請書式")
+
+    def test_links_are_not_duplicated(self, detail_page):
+        """リンク節の中で同じ URI を二度出さない。
+
+        元データは同じ URI を related_links と embedded_links の両方に持つことがある。
+
+        必要書類の `doc_url` と申請書式が同じ URI になる制度も実データに10件あるが、
+        そちらは「必要な書類」と「申請の導線」で役割が違うため重複を許す。
+        ここで見るのはリンク節（申請書式・関連リンク）の中だけ。
+        """
+        hrefs = detail_page.locator('[data-testid="link-list"] a').evaluate_all(
+            "els => els.map(e => e.getAttribute('href'))"
+        )
+        assert len(hrefs) == len(set(hrefs)), f"同じリンクが重複しています: {hrefs}"
 
 
 class TestDebugPageIsMarkedAsDevOnly:

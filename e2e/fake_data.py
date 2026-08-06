@@ -76,6 +76,17 @@ SUBGRAPH_ROWS = [
         "title": "3歳児健康診査",
         "category": "3歳児健康診査",
         "summary": "3歳のお子さんを対象とした健康診査です。",
+        # 詳細ページの本体。一覧の要約とは別物であることを検証できるようにする
+        "description": "身体計測、内科診察、歯科健診、視聴覚検査を行います。",
+        "utilization": "対象月齢になったら郵送される受診票を持参してください。",
+        # 機械判定しきれない条件の原文。has_free_text_conditions=True と対応させる
+        "conditions_text": "前年の所得が一定額を下回る世帯に限ります。",
+        "target_persons_text": "台東区に住民登録のある3歳のお子さん",
+        "has_free_text_conditions": True,
+        "related_links": [{"title": "子育て支援のご案内", "uri": "https://example.com/kosodate"}],
+        "form_links": [{"title": "問診票（PDF）", "uri": "https://example.com/monshin.pdf"}],
+        # related_links と同じ URI を混ぜ、表示側で重複が排除されることを検証する
+        "embedded_links": [{"title": "子育て支援のご案内", "uri": "https://example.com/kosodate"}],
         "area_name": "台東区",
         "min_age_months": 36,
         "max_age_months": 47,
@@ -101,14 +112,16 @@ SUBGRAPH_ROWS = [
         "status_type": status_type,
         "doc_id": doc_id,
         "doc_name": doc_name,
+        "doc_url": doc_url,
     }
     for status_id, status_name, status_type in [
         ("AGE_3sai", "3歳〜3歳11か月", "AGE"),
         ("LOCATION_taito", "台東区", "LOCATION"),
     ]
-    for doc_id, doc_name in [
-        ("DOC_boshi", "母子健康手帳"),
-        ("DOC_monshin", "3歳児健康診査問診票（記入済みのもの）"),
+    for doc_id, doc_name, doc_url in [
+        ("DOC_boshi", "母子健康手帳", None),
+        # 様式のURLを持つ書類（実データでは 462/4,919 件だけ）
+        ("DOC_monshin", "3歳児健康診査問診票（記入済みのもの）", "https://example.com/monshin.pdf"),
     ]
 ]
 

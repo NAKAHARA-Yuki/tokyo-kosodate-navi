@@ -17,6 +17,9 @@ export type Benefit = {
   electronic_submission: boolean;
 };
 
+// 本文に埋め込まれていたリンク（ETL の extract_links() が分離したもの）。
+export type BenefitLink = { title: string; uri: string };
+
 // GET /api/subgraph のレスポンス（app/routers/benefits.py: get_subgraph）。
 // cytoscape 用に nodes/edges の形で返ってくる。詳細ビューでは制度ノードの属性と、
 // 条件(Status)・書類(Document)ノードを一覧として使う。
@@ -29,6 +32,17 @@ export type SubgraphNode = {
     benefit_id?: string;
     category?: string;
     summary?: string;
+    // 詳細ページ本体の本文。summary は一覧と同じ要約なので、これが無いと詳細にならない
+    description?: string | null;
+    utilization?: string | null;
+    // 機械判定しきれない条件の原文。has_free_text_conditions=true のときは必ず見せる
+    conditions_text?: string | null;
+    target_persons_text?: string | null;
+    has_free_text_conditions?: boolean;
+    // 本文から ETL が分離したリンク（`タイトル;https://...` 形式で埋め込まれていたもの）
+    related_links?: BenefitLink[];
+    form_links?: BenefitLink[];
+    embedded_links?: BenefitLink[];
     area_name?: string;
     min_age_months?: number | null;
     max_age_months?: number | null;
@@ -51,6 +65,8 @@ export type SubgraphNode = {
     update_date?: string | null;
     // Status のときだけ入る
     status_type?: string;
+    // Document のときだけ入る（様式のURL。持っている書類は 462/4,919 件だけ）
+    doc_url?: string | null;
   };
 };
 

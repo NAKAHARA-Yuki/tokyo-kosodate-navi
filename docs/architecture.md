@@ -57,6 +57,7 @@ Server Component）が専用サービスアカウント（`kosodate-frontend@...
 | `etl_statuses.py` | AGE / LOCATION / TAG_* の status ノード生成 |
 | `etl_graph.py` | benefits 行の構築・スキルツリー生成・全体変換（`transform`） |
 | `etl_schema.py` | BigQuery のテーブルスキーマ定義 |
+| `etl_quality.py` | ロード**前**の品質チェック。件数の急変・必須列の欠損・age_source の分布・自治体数を見て、基準を外れたらロードせずに落とす |
 | `etl_load.py` | BigQuery へのロード |
 | `age_rules.py` | 対象年齢のテキスト推定（正規表現のみ。LLM 不使用） |
 | `create_graph.sql` / `.py` | PROPERTY GRAPH の定義と実行 |

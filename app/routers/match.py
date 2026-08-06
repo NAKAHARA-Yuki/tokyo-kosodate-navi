@@ -13,6 +13,16 @@ from queries import AGE_SOURCE_ORDER_BY, age_filter_sql
 
 router = APIRouter()
 
+# 東京都の標準分類コード（benefits.target_codes）。
+# `*_code_labels` は統計的推定（公式マスタが非公開のため。docs/data-model.md）だが、
+# **コードそのものは元データの値**なので、コードで絞る分には推定を挟まない。
+#
+# コードの意味づけが妥当かは dev の実データで検証した（本文との一致率）:
+#   088（ひとり親家庭）541件 … 本文に「ひとり親/母子/父子/寡婦/遺児」を含む 90%
+#   090（障がい児）  495件 … 本文に「障害/障がい」を含む 90%
+TARGET_CODE_SINGLE_PARENT = "088"
+TARGET_CODE_DISABILITY = "090"
+
 
 class UserProfile(BaseModel):
     """設定画面で登録するユーザー属性。チャットではなく選択式フォームからの入力を想定。"""
@@ -61,6 +71,8 @@ def match_benefits(
     area_code: str | None = Query(default=None, description="居住地の市区町村コード"),
     child_age_months: int | None = Query(default=None, ge=0, le=300, description="子どもの月齢"),
     is_pregnant: bool = Query(default=False),
+    is_single_parent: bool = Query(default=False, description="ひとり親世帯かどうか"),
+    has_disability: bool = Query(default=False, description="障がいのあるお子さんがいるか"),
     include_skill_tree: bool = Query(default=True, description="次に繋がる制度も返すか"),
     limit: int = Query(default=60, le=200),
 ):
@@ -68,6 +80,11 @@ def match_benefits(
 
     どの条件で当たったかを match_reasons として返し、推定年齢で当たった場合は
     age_source='inferred' を添えて「推定」であることを利用側が示せるようにする。
+
+    ひとり親・障がいの属性は **並び順と理由付けにだけ使い、絞り込みには使わない**。
+    該当しない人からこれらの制度を隠すこともできるが、それは
+    「対象なのに出ない」を作りうる。分類コードと本文の一致率は90%で、
+    残り10%を取りこぼす方が、関係ない制度が数件混ざるより害が大きい（CLAUDE.md）。
     """
     conditions = []
     params = []
@@ -85,15 +102,28 @@ def match_benefits(
         conditions.append("is_prenatal")
 
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    # 属性に該当する制度を先頭に出す。指定が無ければ全部 false になり並びは変わらない。
+    params.append(bigquery.ScalarQueryParameter("sp_code", "STRING", TARGET_CODE_SINGLE_PARENT))
+    params.append(bigquery.ScalarQueryParameter("dis_code", "STRING", TARGET_CODE_DISABILITY))
+    priority_order = []
+    if is_single_parent:
+        priority_order.append("is_single_parent_target DESC")
+    if has_disability:
+        priority_order.append("is_disability_target DESC")
+    priority_clause = ("".join(f"{o},\n          " for o in priority_order)) if priority_order else ""
+
     query = f"""
         SELECT benefit_id, title, category, summary, area_name, area_code,
                effective_min_age_months, effective_max_age_months, age_source,
                is_prenatal, is_free, monetary_support_text, electronic_submission,
-               has_free_text_conditions, conditions_text, official_url, scheme_id
+               has_free_text_conditions, conditions_text, official_url, scheme_id,
+               @sp_code IN UNNEST(target_codes) AS is_single_parent_target,
+               @dis_code IN UNNEST(target_codes) AS is_disability_target
         FROM `{PROJECT_ID}.{DATASET_ID}.benefits`
         {where_clause}
         ORDER BY
-          {AGE_SOURCE_ORDER_BY},
+          {priority_clause}{AGE_SOURCE_ORDER_BY},
           effective_min_age_months NULLS LAST,
           title
         LIMIT @limit
@@ -119,6 +149,12 @@ def match_benefits(
             reasons.append(f"お子さんの月齢{child_age_months}が対象範囲{span}に該当{suffix}")
         if is_pregnant and r["is_prenatal"]:
             reasons.append("妊娠中の方が対象")
+        # 分類コードは元データの値だが、コードが何を指すかの対応づけはこちらの推定
+        # （公式マスタが非公開）。断定を避けた言い回しにする。
+        if is_single_parent and r["is_single_parent_target"]:
+            reasons.append("ひとり親家庭向けに分類されている制度")
+        if has_disability and r["is_disability_target"]:
+            reasons.append("障がいのあるお子さん向けに分類されている制度")
 
         results.append(
             {
