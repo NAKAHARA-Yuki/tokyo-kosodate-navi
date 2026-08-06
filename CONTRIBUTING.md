@@ -211,13 +211,16 @@ staging / prod のデータ更新が必要な場合は、権限を持つメン�
 
 ## 依存関係を変更するとき
 
-本番イメージに入るものだけロックしています。開発側（`requirements-dev.txt`）は緩いままです。
+本番イメージに入るものだけロックしています。ETL・開発・CI 側はロックせず、
+**メジャー版の上限だけ**付けています（[ADR 0007](docs/adr/0007-dependency-locking.md)）。
 
 | ファイル | 役割 |
 |---|---|
 | `app/requirements.in` | **人が編集する。** 本番アプリの直接依存だけを書く |
 | `app/requirements.lock` | 自動生成。推移依存まで含めてハッシュ付きで固定。**手で編集しない** |
-| `requirements.txt` / `requirements-dev.txt` | ETL・開発・CI 用。緩い指定のまま |
+| `requirements.txt` / `requirements-dev.txt` | ETL・開発・CI 用。上限だけ付ける（`pandas>=2.2.0,<4` など） |
+
+### ロックする側（`app/`）
 
 `app/requirements.in` を変えたら**必ず**ロックを再生成してください。
 
@@ -235,6 +238,17 @@ Dockerfile は `--require-hashes` 付きで入れるため、ロックを更新�
 
 **なぜ docker 経由か**: ロックは解決した Python バージョンに紐づきます。
 ローカル（3.14）で作ると本番（3.12）で入らないロックができます。
+
+### ロックしない側（`requirements.txt` / `requirements-dev.txt`）
+
+上限を上げるのは**意図的な変更**として扱ってください。「テストが落ちたので上限を外す」ではなく、
+新しいメジャー版に合わせてコードを直したうえで上限を上げます。
+
+追従は Dependabot（`.github/dependabot.yml`）が週1でまとめて PR にします。
+
+**Dependabot の PR が `app/requirements.in` を触っていたら、マージ前に `make lock` を回して
+ロックも同じ PR に含めてください。** Dependabot はロックを再生成できません
+（`python:3.12-slim` の中で作る必要があるため）。
 
 ## セキュリティ
 

@@ -1,8 +1,14 @@
 # 開発・CI 用（本番イメージには入れない）
 -r requirements.txt
--r app/requirements.in    # 開発側は緩いままにする。固定するのは本番イメージだけ（app/requirements.lock）
 
-pytest>=8.0.0
-httpx>=0.27.0          # FastAPI TestClient が使う
-ruff>=0.6.0
-pytest-playwright>=0.5.0  # E2E。playwright 本体も依存として入る
+# 本番アプリの依存は **緩いまま** 入れる。ロック（app/requirements.lock）が入るのは
+# 本番イメージだけで、CI はあえて新しい版で走らせる。
+# こうしておくと `make lock` で上げるときに問題になる変更を CI が先に踏んでくれる（docs/adr/0007）。
+-r app/requirements.in
+
+# 上限の付け方は requirements.txt と同じ。ここが壊れても本番データは壊れないが、
+# CI が赤くなると全員の手が止まるため、勝手に上がらないようにしておく。
+pytest>=8.0.0,<10
+httpx>=0.27.0,<1             # FastAPI TestClient が使う
+ruff>=0.16.0,<0.17           # 0.x はマイナーで規則が変わるのでマイナーで止める
+pytest-playwright>=0.5.0,<1  # E2E。playwright 本体も依存として入る

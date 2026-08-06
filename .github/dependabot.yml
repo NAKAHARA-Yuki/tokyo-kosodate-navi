@@ -1,0 +1,63 @@
+# 依存の自動更新。
+#
+# requirements.txt / requirements-dev.txt に上限（`<4` 等）を付けた分、
+# 放置すると古いまま塩漬けになる。上限とセットで入れる（docs/adr/0007）。
+#
+# app/requirements.lock（本番イメージ）はここでは扱えない。Dependabot は
+# `make lock` を実行できず、生成には python:3.12-slim が要るため。
+# app/requirements.in を更新する PR が来たら、マージ前に `make lock` を回して
+# 同じ PR にロックを含めること（CONTRIBUTING.md）。
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+    labels:
+      - "type: infra"
+      - "P3"
+    # 1本の PR にまとめる。個別に来ると数が多く、レビューが追いつかない。
+    groups:
+      python:
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: "/frontend"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+    labels:
+      - "type: infra"
+      - "area: frontend"
+      - "P3"
+    groups:
+      npm:
+        patterns:
+          - "*"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: chore
+    labels:
+      - "type: infra"
+      - "area: ci"
+      - "P3"
+    groups:
+      actions:
+        patterns:
+          - "*"
