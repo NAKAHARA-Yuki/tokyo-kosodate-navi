@@ -5,6 +5,7 @@
 """
 
 from datetime import date
+from typing import Annotated
 
 import dependencies
 from config import DATASET_ID, PROJECT_ID
@@ -103,11 +104,14 @@ def save_user_profile(profile: UserProfile):
 @router.get("/api/benefits/match")
 def match_benefits(
     area_code: str | None = Query(default=None, description="居住地の市区町村コード"),
-    child_age_months: list[int] = Query(
-        default=[], description="子どもの月齢。きょうだいの分だけ繰り返し指定できる"
+    # 単数から配列にするとき Query(ge=..., le=...) の制約は要素に効かない。
+    # Annotated で要素側に付け直さないと、-5 や 99999 が素通りして
+    # ChildProfile（同じ月齢を 422 で弾く）と基準が食い違う。
+    child_age_months: list[Annotated[int, Field(ge=0, le=300)]] = Query(
+        default=[], max_length=10, description="子どもの月齢。きょうだいの分だけ繰り返し指定できる"
     ),
     child_birth_date: list[date] = Query(
-        default=[], description="子どもの生年月日。指定するとサーバ側で月齢に換算する"
+        default=[], max_length=10, description="子どもの生年月日。指定するとサーバ側で月齢に換算する"
     ),
     is_pregnant: bool = Query(default=False),
     is_single_parent: bool = Query(default=False, description="ひとり親世帯かどうか"),

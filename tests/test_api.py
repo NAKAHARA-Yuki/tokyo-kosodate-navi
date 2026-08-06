@@ -5,7 +5,10 @@
 2. レスポンスの形が壊れていないか
 """
 
+from datetime import date
+
 import pytest
+from routers.match import months_between
 
 
 def benefit_row(**overrides):
@@ -200,6 +203,16 @@ class TestMatchBenefits:
         assert any("月齢3" in r for r in item["match_reasons"])
         assert not any("月齢140" in r for r in item["match_reasons"])
 
+    def test_rejects_out_of_range_age(self, client, bq):
+        """配列にしても月齢の範囲チェックを効かせる。
+
+        Query(ge=..., le=...) は list の要素には効かないため、
+        Annotated で要素側に付け直している。ChildProfile 側（422）と基準を揃える。
+        """
+        bq.set_rows([])
+        assert client.get("/api/benefits/match?child_age_months=-5").status_code == 422
+        assert client.get("/api/benefits/match?child_age_months=99999").status_code == 422
+
     def test_birth_date_is_accepted(self, client, bq):
         """生年月日で指定するとサーバ側で月齢に換算する。"""
         from datetime import date
@@ -228,6 +241,22 @@ class TestMatchBenefits:
         client.get("/api/benefits/match?child_age_months=0&is_pregnant=true&include_skill_tree=false")
         assert "is_prenatal" in bq.last_query
 
+    def test_prenatal_row_does_not_claim_the_child_matched(self, client, bq):
+        """妊娠期の制度に「お子さんが該当」と書かない。
+
+        is_pregnant=true のときは年齢が範囲外でも is_prenatal で行が入る。
+        その行に年齢範囲が入っていると、以前は年齢で当たったかのような理由文を出していた
+        （利用者に事実でないことを言っていた）。当たった子がいるときだけ出す。
+        """
+        bq.set_rows(
+            [self.match_row(is_prenatal=True, effective_min_age_months=0, effective_max_age_months=12)]
+        )
+        res = client.get("/api/benefits/match?child_age_months=120&is_pregnant=true&include_skill_tree=false")
+        item = res.json()["benefits"][0]
+        assert item["matched_child_age_months"] == []
+        assert any("妊娠中" in r for r in item["match_reasons"])
+        assert not any("該当" in r for r in item["match_reasons"]), item["match_reasons"]
+
     def test_needs_confirmation_surfaced(self, client, bq):
         """自由記述条件が残る制度は、機械判定だけで確定させない。"""
         bq.set_rows([self.match_row(has_free_text_conditions=True, conditions_text="所得制限あり")])
@@ -235,6 +264,32 @@ class TestMatchBenefits:
         item = res.json()["benefits"][0]
         assert item["needs_confirmation"] is True
         assert item["conditions_text"] == "所得制限あり"
+
+
+class TestMonthsBetween:
+    """生年月日から月齢を出す純粋ロジック（CLAUDE.md「純粋ロジックは必ずテストを書く」）。
+
+    `today` を渡せる設計にしてあるので、実行日に依存せず固定できる。
+    """
+
+    @pytest.mark.parametrize(
+        "birth, today, expected",
+        [
+            (date(2024, 1, 1), date(2024, 1, 1), 0),  # 生まれた日
+            (date(2024, 1, 15), date(2024, 2, 14), 0),  # 誕生日の前日はまだ0か月
+            (date(2024, 1, 15), date(2024, 2, 15), 1),  # 誕生日当日で1か月
+            (date(2024, 1, 15), date(2025, 1, 15), 12),  # 1歳
+            (date(2024, 2, 29), date(2025, 2, 28), 11),  # うるう日生まれ。2/28では12にしない
+            (date(2024, 2, 29), date(2025, 3, 1), 12),
+            # 対応する日が無い月をまたぐケース。1/31生まれの3/1は「2か月」ではなく「1か月」。
+            # 月齢バケットでの絞り込みが用途なので、この控えめな出方を**許容している**。
+            (date(2024, 1, 31), date(2024, 3, 1), 1),
+            (date(2024, 1, 31), date(2024, 3, 31), 2),
+            (date(2030, 1, 1), date(2024, 1, 1), 0),  # 未来日でも負にしない
+        ],
+    )
+    def test_months(self, birth, today, expected):
+        assert months_between(birth, today) == expected
 
 
 class TestUserProfile:

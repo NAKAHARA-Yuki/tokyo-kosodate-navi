@@ -4,8 +4,10 @@
 素の `min/max_age_months` は6割超が NULL で、それだけで絞ると
 「10歳なのに新生児向けの制度が出る」といった取りこぼしが起きる（CLAUDE.md参照）。
 
-`age_filter_sql()` は routers/benefits.py の search_benefits と routers/match.py の
-match_benefits で使う「単一の年齢が範囲内か」の判定。routers/timeline.py の get_timeline は
+`age_filter_sql()` は routers/benefits.py の search_benefits で使う
+「単一の年齢が範囲内か」の判定。routers/match.py の match_benefits は
+きょうだいに対応したため `ages_filter_sql()`（配列版）を使う。
+routers/timeline.py の get_timeline は
 ライフステージという「範囲」との重複判定で、NULLの扱いも逆（NULLを許容ではなく除外）のため
 構造的に別物であり、ここでは共通化していない。
 """
