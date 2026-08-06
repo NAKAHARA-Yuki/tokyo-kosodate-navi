@@ -17,6 +17,8 @@ TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
 # 代わりに文の区切りで止める。改行・句点・パイプ（表組みのセル境界）を境界とし、
 # 読点は跨ぐ（「AとB、詳しくは案内;URL」のようなタイトルがあるため）。
 EMBEDDED_LINK_RE = re.compile(r"([^\n;|。]{0,80}?);(https?://[^\s|（）()]+)")
+# タイトルが裸のURLそのものになっている場合の判定（表示名として使わない）
+ONLY_URL_RE = re.compile(r"^https?://\S*$")
 
 
 def normalize_date(value):
@@ -70,8 +72,14 @@ def extract_links(text):
     def _replace(match):
         title = (match.group(1) or "").strip()
         uri = match.group(2).rstrip("。、,")
-        links.append({"title": title or None, "uri": uri})
-        # 本文にはタイトルだけ残す（URLは links 側で参照する）
+        # タイトルが裸のURLそのものになることがある（本文にURLが並記されている箇所）。
+        # 表示名として意味が無いので捨て、利用側（app/routers/benefits.py の _links）が
+        # uri を表示名に使うフォールバックに任せる。実データで19件（issue #80）。
+        link_title = None if ONLY_URL_RE.match(title) else (title or None)
+        links.append({"title": link_title, "uri": uri})
+        # 本文にはタイトルだけ残す（URLは links 側で参照する）。
+        # 捨てた場合でも元の文字列を戻す。「本文の内容はタイトルの取り方に影響されない」
+        # という性質を保つため（レビューで確認された点）。
         return title
 
     plain = EMBEDDED_LINK_RE.sub(_replace, text)

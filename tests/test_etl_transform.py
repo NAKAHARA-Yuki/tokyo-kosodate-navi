@@ -83,6 +83,29 @@ class TestExtractLinks:
         links, _ = extract_links("給付先は保護者となります。申請方法はこちら;https://example.com/b.html")
         assert links[0]["title"] == "申請方法はこちら"
 
+    def test_url_only_title_is_dropped(self):
+        """タイトルが裸のURLそのものなら表示名として使わない（issue #80）。
+
+        本文にURLが並記されている箇所で起きる。実データで19件。
+        title=None にすると、API 側（_links）が uri を表示名に使うフォールバックに乗る。
+        """
+        links, plain = extract_links("https://example.com/old.html;https://example.com/new.html")
+        assert links[0]["title"] is None
+        assert links[0]["uri"] == "https://example.com/new.html"
+        # 本文はタイトルの取り方に影響されない
+        assert "https://example.com/old.html" in plain
+
+    def test_title_with_text_and_url_is_kept(self):
+        """URLを含んでいても、意味のある文字列があるタイトルは捨てない。
+
+        「…「医療情報ネット」https://…（外部サイト）」のような形が実データにある。
+        URLを一律に剥がすと、この手前の文字列まで失われる。
+        """
+        links, _ = extract_links(
+            "「医療情報ネット」https://example.com/net/（外部サイト）;https://example.com/a.html"
+        )
+        assert links[0]["title"] == "「医療情報ネット」https://example.com/net/（外部サイト）"
+
     def test_does_not_cross_newline(self):
         links, _ = extract_links("前の行の文章\n申請書のダウンロード;https://example.com/c.pdf")
         assert links[0]["title"] == "申請書のダウンロード"
