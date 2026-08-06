@@ -8,6 +8,7 @@
 from datetime import date
 
 import pytest
+from conftest import FakeQueryJob, FakeRow
 from routers.match import months_between
 
 
@@ -558,3 +559,98 @@ class TestDraftReview:
         assert res.status_code == 200
         assert res.json()["disclaimer"], "AI生成である旨の注記が必要"
         assert "書かれていないこと" in captured["prompt"]
+
+
+class TestDataSource:
+    """出典とデータの鮮度（#57）。
+
+    出典・免責は「BigQuery が落ちていても出る」ことが要件なので、そこを重点的に見る。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self, monkeypatch):
+        """プロセス内キャッシュはテスト間で持ち越さない。"""
+        import routers.meta as meta
+
+        monkeypatch.setattr(meta, "_cache", None)
+        monkeypatch.setattr(meta, "_cache_expires_at", 0.0)
+
+    def test_returns_source_and_freshness(self, client, bq):
+        bq.set_rows([{"benefit_count": 7812, "area_count": 63, "latest_update_date": "2026-03-31"}])
+        body = client.get("/api/data-source").json()
+
+        assert body["source"]["publisher"] == "東京都"
+        assert "子育て支援制度レジストリ" in body["source"]["name"]
+        assert body["source"]["url"].startswith("https://portal.data.metro.tokyo.lg.jp/")
+        assert body["benefit_count"] == 7812
+        assert body["area_count"] == 63
+        assert body["latest_update_date"] == "2026-03-31"
+
+    def test_source_is_returned_even_if_bigquery_fails(self, client, monkeypatch):
+        """鮮度が取れなくても、出典だけは必ず返す（フッターの免責を消さないため）。"""
+        import dependencies
+
+        class Boom:
+            def query(self, *args, **kwargs):
+                raise RuntimeError("BigQuery が落ちている")
+
+        monkeypatch.setattr(dependencies, "get_client", lambda: Boom())
+
+        res = client.get("/api/data-source")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["source"]["name"]
+        assert body["benefit_count"] is None
+        assert body["latest_update_date"] is None
+
+    def test_failure_is_not_cached(self, client, monkeypatch):
+        """失敗を1時間キャッシュしない（BigQuery が復旧したら次のリクエストで出る）。
+
+        レビュー指摘（#69）。成功時と同じ期限を設定していたため、コールドスタート直後に
+        BigQuery が一瞬詰まっただけで、そのインスタンスは復旧後も1時間ずっと
+        件数と更新日を出さない状態になっていた。
+        """
+        import dependencies
+
+        calls = {"n": 0}
+
+        class Flaky:
+            def query(self, *args, **kwargs):
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    raise RuntimeError("BigQuery が一時的に落ちている")
+                return FakeQueryJob(
+                    [
+                        FakeRow(
+                            {
+                                "benefit_count": 7812,
+                                "area_count": 63,
+                                "latest_update_date": "2026-03-31",
+                            }
+                        )
+                    ]
+                )
+
+        monkeypatch.setattr(dependencies, "get_client", lambda: Flaky())
+
+        first = client.get("/api/data-source").json()
+        assert first["benefit_count"] is None, "1回目は失敗するので鮮度は返らない"
+        assert first["source"]["name"], "出典は失敗しても返る"
+
+        second = client.get("/api/data-source").json()
+        assert second["benefit_count"] == 7812, (
+            f"BigQuery が復旧しても鮮度が返りません（失敗がキャッシュされている）: {second}"
+        )
+
+    def test_result_is_cached(self, client, bq):
+        """全ページのフッターで使うので、毎回 BigQuery を叩かない。"""
+        bq.set_rows([{"benefit_count": 1, "area_count": 1, "latest_update_date": "2026-03-31"}])
+        client.get("/api/data-source")
+        client.get("/api/data-source")
+        assert len(bq.queries) == 1, f"2回クエリが飛んでいます: {bq.queries}"
+
+    def test_counts_distinct_areas(self, client, bq):
+        bq.set_rows([{"benefit_count": 1, "area_count": 1, "latest_update_date": None}])
+        client.get("/api/data-source")
+        assert "COUNT(DISTINCT area_code)" in bq.last_query
+        assert "MAX(update_date)" in bq.last_query

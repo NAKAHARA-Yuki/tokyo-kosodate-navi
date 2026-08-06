@@ -13,11 +13,12 @@ Gemini は制度のやさしい解説や書類添削といった伴走サポー�
 - routers/match.py    : /api/user/profile, /api/benefits/match（Phase2）
 - routers/timeline.py : /api/timeline（Phase3）
 - routers/support.py  : /api/support/draft-review（Gemini, Phase2）
+- routers/meta.py     : /api/data-source（出典とデータの鮮度）
 """
 
 from config import APP_ENV, DATASET_ID
 from fastapi import FastAPI
-from routers import benefits, match, support, timeline
+from routers import benefits, match, meta, support, timeline
 
 app = FastAPI(title="子育て支援制度ナレッジグラフ API")
 
@@ -25,6 +26,7 @@ app.include_router(benefits.router)
 app.include_router(match.router)
 app.include_router(timeline.router)
 app.include_router(support.router)
+app.include_router(meta.router)
 
 
 # パスが `/api/` 配下なのは意図的。`/healthz` は Google Frontend が手前で横取りし、

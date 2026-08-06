@@ -41,6 +41,55 @@ class TestTopPage:
         expect(top_page.locator("main")).to_contain_text("一覧に戻る")
 
 
+class TestSourceAndDisclaimer:
+    """出典・免責・データの鮮度（#57）。
+
+    行政情報を扱う以上ここは機能ではなく責任にあたるので、
+    「たまたま出ている」ではなく全ページで出ていることを検証する。
+    実データでも通るよう、件数や日付の具体的な値は前提にしない。
+    """
+
+    @pytest.fixture
+    def top_page(self, page, base_url):
+        page.set_default_timeout(15_000)
+        page.goto(base_url)
+        page.wait_for_selector("footer")
+        return page
+
+    def test_source_is_shown_with_link(self, top_page):
+        footer = top_page.locator("footer")
+        expect(footer).to_contain_text("出典")
+        expect(footer).to_contain_text("子育て支援制度レジストリ")
+        link = footer.locator('a[href*="portal.data.metro.tokyo.lg.jp"]')
+        expect(link.first).to_be_visible()
+
+    def test_disclaimer_is_shown(self, top_page):
+        expect(top_page.locator("footer")).to_contain_text("最終的な判断は各自治体の公式情報")
+
+    def test_states_it_is_not_an_official_service(self, top_page):
+        """公式サービスだと誤解させない。"""
+        expect(top_page.locator("footer")).to_contain_text("公式サービスではありません")
+
+    def test_data_freshness_is_shown(self, top_page):
+        """いつ時点の、どれだけのデータかが分かる。"""
+        text = top_page.locator("footer").inner_text()
+        assert re.search(r"[\d,]+件", text), f"収録件数が出ていません: {text}"
+        assert "最終更新" in text, f"データの最終更新が出ていません: {text}"
+
+    def test_footer_is_on_the_detail_page_too(self, top_page):
+        """一覧だけでなく詳細ページにも出ること。"""
+        top_page.locator("main ul li a").first.click()
+        top_page.wait_for_url(re.compile(r"/benefits/"))
+        expect(top_page.locator("footer")).to_contain_text("最終的な判断は各自治体の公式情報")
+
+    def test_header_links_back_to_top(self, top_page):
+        top_page.locator("main ul li a").first.click()
+        top_page.wait_for_url(re.compile(r"/benefits/"))
+        top_page.locator("header a").first.click()
+        top_page.wait_for_url(re.compile(r"/$"))
+        expect(top_page.locator("main ul li").first).to_be_visible()
+
+
 class TestBenefitDetail:
     """詳細ページに制度の本文・条件の原文・申請リンクが出ること（issue #63）。
 

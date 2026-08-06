@@ -147,6 +147,9 @@ TIMELINE_ROWS = [
 
 PROFILE_ROWS = [{"area_name": "台東区"}]
 
+# /api/data-source。フッターに出す件数と鮮度。
+DATA_SOURCE_ROWS = [{"benefit_count": 7812, "area_count": 63, "latest_update_date": "2026-03-31"}]
+
 DRAFT_REVIEW_ROWS = [
     {
         "title": "3歳児健康診査",
@@ -172,6 +175,8 @@ def rows_for(query: str, params: dict | None = None) -> list[dict]:
     E2E が気づけない。
     """
     params = params or {}
+    if "COUNT(DISTINCT area_code)" in query:
+        return DATA_SOURCE_ROWS
     if "stage_key" in query:
         return TIMELINE_ROWS
     if "benefit_leads_to" in query:
