@@ -116,7 +116,9 @@ RUN printf '%s\n' \
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 COPY requirements-dev.txt requirements.txt /tmp/deps/
 COPY app/requirements.in /tmp/deps/app/
-RUN pip install --no-cache-dir -r /tmp/deps/requirements-dev.txt \
+# pip-tools は `make lock` が使う。実行時に入れようとすると /usr/local も
+# /home/dev/.local も root 所有なので sudo が要り、そこで手が止まる（Playwright と同じ理由）。
+RUN pip install --no-cache-dir -r /tmp/deps/requirements-dev.txt pip-tools \
     && playwright install --with-deps chromium \
     && chmod -R a+rX /opt/playwright \
     && rm -rf /tmp/deps

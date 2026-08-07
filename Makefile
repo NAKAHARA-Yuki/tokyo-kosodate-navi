@@ -263,16 +263,20 @@ lock: ## 本番イメージの依存を再固定する (app/requirements.in を�
 	@# 3.12 以外で作ると本番で入らないロックになる。
 	@# 開発用コンテナは本番と同じ 3.12 なのでそのまま実行できる。
 	@# それ以外の環境では docker で 3.12 を用意する（そのために docker が要る）。
+	@# VENV は環境によって相対（.venv）にも絶対（コンテナは /usr/local）にもなる。
+	@# `cd app` してから `../$(VENV)` と書くと、絶対パスのときに `..//usr/local` になって落ちる。
+	@# $(abspath) を通してどちらでも同じように解決させる。
 	@if [ "$$($(PY) -c 'import sys; print("%d.%d" % sys.version_info[:2])')" = "3.12" ]; then \
 		echo "Python 3.12 のためそのまま解決します"; \
-		$(PIP) install -q pip-tools && \
-		cd app && ../$(VENV)/bin/pip-compile --quiet --generate-hashes \
-			--output-file requirements.lock requirements.in; \
+		[ -x "$(abspath $(VENV))/bin/pip-compile" ] || $(PIP) install -q pip-tools; \
+		cd app && $(abspath $(VENV))/bin/pip-compile --quiet --no-strip-extras \
+			--generate-hashes --output-file requirements.lock requirements.in; \
 	else \
 		echo "Python が 3.12 ではないため docker で解決します"; \
 		docker run --rm -v "$(PWD)/app:/w" -w /w python:3.12-slim sh -c '\
 			pip install -q pip-tools && \
-			pip-compile --quiet --generate-hashes --output-file requirements.lock requirements.in'; \
+			pip-compile --quiet --no-strip-extras --generate-hashes \
+				--output-file requirements.lock requirements.in'; \
 	fi
 	@echo ""
 	@echo "✅ app/requirements.lock を更新しました"
