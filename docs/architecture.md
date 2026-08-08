@@ -70,6 +70,7 @@ Server Component）が専用サービスアカウント（`kosodate-frontend@...
 | `main.py` | アプリ生成・ルーター登録・`/api/healthz`（HTMLは返さない） |
 | `dependencies.py` | BigQuery / Gemini クライアントの生成 |
 | `queries.py` | 複数ルーターで共通の年齢フィルタSQL |
+| `explanation_cache.py` | やさしい解説の生成結果を BigQuery に保存して再利用する（ADR 0015） |
 | `routers/benefits.py` | `/api/categories`, `/api/areas`, `/api/benefits`, `/api/subgraph` |
 | `routers/match.py` | `/api/user/profile`, `/api/benefits/match`（Phase2）。プロフィールは**子ども複数**に対応し、生年月日を正とする（#75） |
 | `routers/timeline.py` | `/api/timeline`（Phase3） |

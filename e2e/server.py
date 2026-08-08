@@ -28,14 +28,36 @@ class _FakeJob:
 
 
 class FakeBigQueryClient:
-    """クエリ内容とパラメータに応じてスタブ行を返すだけのクライアント。"""
+    """クエリ内容とパラメータに応じてスタブ行を返すだけのクライアント。
+
+    やさしい解説のキャッシュ（issue #68）だけは**状態を持つ**。
+    どのクエリにも制度の行を返すようなスタブにすると、キャッシュ参照が必ずヒット扱いになり、
+    生成の経路がテストで一度も通らなくなる（実際にそれで空振りしかけた）。
+    """
+
+    def __init__(self):
+        self._explanations = {}
 
     def query(self, query, job_config=None):
         params = {}
         if job_config is not None:
             for p in getattr(job_config, "query_parameters", None) or []:
                 params[p.name] = p.value
+        if "benefit_explanations" in query:
+            hit = self._explanations.get(params.get("cache_key"))
+            return _FakeJob([hit] if hit else [])
         return _FakeJob(fake_data.rows_for(query, params))
+
+    def create_table(self, table, exists_ok=False):
+        return table
+
+    def insert_rows_json(self, table, rows):
+        for row in rows:
+            self._explanations[row["cache_key"]] = {
+                "result": row["result"],
+                "generated_at": row["generated_at"],
+            }
+        return []
 
 
 class _FakeResponse:
@@ -60,7 +82,9 @@ def build_app():
     import dependencies
     import main
 
-    dependencies.get_client = lambda: FakeBigQueryClient()
+    # キャッシュの状態を持つので、呼ばれるたびに作り直さず1つを使い回す。
+    bq = FakeBigQueryClient()
+    dependencies.get_client = lambda: bq
     dependencies._build_genai_client = lambda: FakeGenaiClient()
     return main.app
 

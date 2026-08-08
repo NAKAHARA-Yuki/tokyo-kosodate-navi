@@ -35,16 +35,40 @@ class FakeBigQueryClient:
         self.rows_to_return: list[FakeRow] = []
         self.queries: list[str] = []
         self.job_configs: list[object] = []
+        self.rows_sequence: list[list[FakeRow]] | None = None
+        self.inserted: list[tuple[str, list[dict]]] = []
+        self.created_tables: list[object] = []
+        self.insert_should_fail = False
 
     def query(self, query, job_config=None):
         self.queries.append(query)
         self.job_configs.append(job_config)
+        if self.rows_sequence:
+            return FakeQueryJob(self.rows_sequence.pop(0))
         return FakeQueryJob(self.rows_to_return)
+
+    def insert_rows_json(self, table, rows):
+        if self.insert_should_fail:
+            raise RuntimeError("insert failed")
+        self.inserted.append((table, rows))
+        return []
+
+    def create_table(self, table, exists_ok=False):
+        self.created_tables.append(table)
+        return table
 
     # ---- テストから使うヘルパー ----
 
     def set_rows(self, rows):
         self.rows_to_return = [FakeRow(r) for r in rows]
+
+    def set_rows_sequence(self, *row_sets):
+        """クエリごとに違う行を返す。
+
+        1リクエストで複数回クエリを投げるエンドポイント（制度取得 → キャッシュ参照など）で
+        「どのクエリにも同じ行が返る」状態だとテストが素通りするため。
+        """
+        self.rows_sequence = [[FakeRow(r) for r in rows] for rows in row_sets]
 
     @property
     def last_query(self) -> str:

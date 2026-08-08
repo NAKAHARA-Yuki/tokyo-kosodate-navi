@@ -827,10 +827,15 @@ async function requestAiExplanation(benefitId, button) {
     });
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
+    // キャッシュから返ることがあるので「いま作った文章」とは限らない。生成日時を必ず出す（issue #68）。
+    const generatedAt = data.generated_at
+      ? `<p class="sub" style="margin-top:4px;">この解説は ${escapeHtml(formatDateTime(data.generated_at))} に生成されたものです。</p>`
+      : '';
     out.innerHTML = sectionBox(
       '✨ AIによるやさしい解説',
       `<p style="white-space:pre-line;">${escapeHtml(data.result)}</p>
-       <p class="sub" style="margin-top:8px;">${data.disclaimer}</p>`
+       <p class="sub" style="margin-top:8px;">${data.disclaimer}</p>
+       ${generatedAt}`
     );
     button.style.display = 'none';
   } catch (err) {
@@ -838,6 +843,11 @@ async function requestAiExplanation(benefitId, button) {
     button.disabled = false;
     button.textContent = '✨ AIにやさしく解説してもらう';
   }
+}
+
+function formatDateTime(iso) {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('ja-JP');
 }
 
 function escapeHtml(text) {
