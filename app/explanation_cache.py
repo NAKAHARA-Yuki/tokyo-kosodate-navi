@@ -22,17 +22,21 @@ from google.cloud import bigquery
 
 TABLE_NAME = "benefit_explanations"
 
-# プロンプトを変えたら手で上げる。上げると全件が作り直しになる。
-# 「内容は同じだが作り直したい」ときの唯一のレバーでもある（有効期限は設けていない。ADR 0015）。
+# **内容が同じでも作り直したいとき**に手で上げる整数。上げると全件が作り直しになる。
+#
+# プロンプトの文言を変えたときに上げる必要は無い。プロンプト本文そのものがキーに
+# 入っているので、1文字でも直せば自動的に別キーになる。手で上げ忘れて古い文章が
+# 返り続けることを防ぐため、意図的にそう設計している（PR #90 のレビュー指摘）。
 PROMPT_VERSION = 1
 
 _SCHEMA = [
-    bigquery.SchemaField("cache_key", "STRING", mode="REQUIRED", description="下の4要素のハッシュ"),
+    bigquery.SchemaField("cache_key", "STRING", mode="REQUIRED", description="下の5要素のハッシュ"),
     bigquery.SchemaField("benefit_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField(
-        "facts_hash", "STRING", mode="REQUIRED", description="Geminiに渡した事実文字列のハッシュ"
+        "prompt_hash", "STRING", mode="REQUIRED", description="Geminiに渡したプロンプト全文のハッシュ"
     ),
     bigquery.SchemaField("model", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("thinking_level", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("prompt_version", "INT64", mode="REQUIRED"),
     bigquery.SchemaField("result", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("generated_at", "TIMESTAMP", mode="REQUIRED"),
@@ -50,20 +54,33 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def facts_hash(facts: str) -> str:
-    """Gemini に渡した事実文字列そのもののハッシュ。
+def prompt_hash(prompt: str) -> str:
+    """Gemini に渡したプロンプト全文のハッシュ。
+
+    **制度情報だけでなく、それを包む指示文まで含める。** 事実文字列だけを見ていると、
+    「制度情報に書かれていないことは補わない」のような指示を強めてもキーが変わらず、
+    古いプロンプトで作った文章が返り続ける（PR #90 のレビュー指摘）。
+    実際に送るものをそのままハッシュすれば、この取りこぼしは起きない。
 
     `benefits.update_date` を無効化の判定に使ってはいけない。あれは自治体側の更新日で、
     こちらが Gemini に渡した内容が変わったかどうかとは一致しない
     （更新日が動いても渡す内容は同じ、逆に更新日が動かなくても列が変わることがある）。
-    渡した内容そのものを見れば、取りこぼしも無駄な作り直しも起きない。
     """
-    return _sha256(facts)
+    return _sha256(prompt)
 
 
-def cache_key(benefit_id: str, facts: str, model: str, prompt_version: int = PROMPT_VERSION) -> str:
-    """出力を決める要素をすべて含める。どれか1つでも変われば別キーになり、自動で作り直される。"""
-    return _sha256(f"{benefit_id}\n{facts_hash(facts)}\n{model}\n{prompt_version}")
+def cache_key(
+    benefit_id: str,
+    prompt: str,
+    model: str,
+    thinking_level: str,
+    prompt_version: int = PROMPT_VERSION,
+) -> str:
+    """出力を決める要素をすべて含める。どれか1つでも変われば別キーになり、自動で作り直される。
+
+    `thinking_level` も出力を変える（実測で思考量が 206→509 トークン変わる）ので入れる。
+    """
+    return _sha256(f"{benefit_id}\n{prompt_hash(prompt)}\n{model}\n{thinking_level}\n{prompt_version}")
 
 
 def lookup(key: str) -> dict | None:
@@ -108,7 +125,13 @@ def _ensure_table(client) -> None:
 
 
 def store(
-    key: str, benefit_id: str, facts: str, model: str, result: str, generated_at: datetime | None = None
+    key: str,
+    benefit_id: str,
+    prompt: str,
+    model: str,
+    thinking_level: str,
+    result: str,
+    generated_at: datetime | None = None,
 ) -> str:
     """生成結果を保存し、保存した生成日時を ISO8601 で返す。
 
@@ -120,8 +143,9 @@ def store(
     row = {
         "cache_key": key,
         "benefit_id": benefit_id,
-        "facts_hash": facts_hash(facts),
+        "prompt_hash": prompt_hash(prompt),
         "model": model,
+        "thinking_level": thinking_level,
         "prompt_version": PROMPT_VERSION,
         "result": result,
         "generated_at": generated_at.isoformat(),

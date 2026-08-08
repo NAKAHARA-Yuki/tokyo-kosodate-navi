@@ -79,15 +79,9 @@ def draft_review(req: DraftReviewRequest):
             "cached": cached,
         }
 
-    # やさしい解説は同じ制度に対して何度でも同じものになるので、一度作ったら使い回す（issue #68）。
-    # 添削（review）の入力は利用者が書いた文章で個人情報が入りうるため、読みも書きもしない。
-    key = None
-    if req.mode != "review":
-        key = explanation_cache.cache_key(req.benefit_id, facts, GEMINI_MODEL)
-        hit = explanation_cache.lookup(key)
-        if hit:
-            return payload(hit["result"], hit["generated_at"], cached=True)
-
+    # プロンプトはキャッシュを引く前に組み立てる。**キーの材料そのものだから**で、
+    # 順序を入れ替えると「文言を直したのに古い解説が返り続ける」状態に戻る（PR #90 の指摘）。
+    # ここの文字列を変えれば自動で別キーになるので、PROMPT_VERSION を手で上げる必要は無い。
     if req.mode == "review":
         if not req.draft:
             raise HTTPException(status_code=400, detail="draft is required for review mode")
@@ -109,6 +103,15 @@ def draft_review(req: DraftReviewRequest):
             "条件が曖昧な場合は「詳細は自治体窓口にご確認ください」と明記する\n\n"
             f"【制度情報】\n{facts}"
         )
+
+    # やさしい解説は同じ制度・同じプロンプトなら何度でも同じものになるので、一度作ったら使い回す（issue #68）。
+    # 添削（review）の入力は利用者が書いた文章で個人情報が入りうるため、読みも書きもしない。
+    key = None
+    if req.mode != "review":
+        key = explanation_cache.cache_key(req.benefit_id, prompt, GEMINI_MODEL, GEMINI_THINKING_LEVEL)
+        hit = explanation_cache.lookup(key)
+        if hit:
+            return payload(hit["result"], hit["generated_at"], cached=True)
 
     try:
         from google.genai import types
@@ -132,7 +135,7 @@ def draft_review(req: DraftReviewRequest):
         raise HTTPException(status_code=503, detail=f"Gemini呼び出しに失敗しました: {exc}") from exc
 
     generated_at = (
-        explanation_cache.store(key, req.benefit_id, facts, GEMINI_MODEL, text)
+        explanation_cache.store(key, req.benefit_id, prompt, GEMINI_MODEL, GEMINI_THINKING_LEVEL, text)
         if key
         else datetime.now(UTC).isoformat()
     )

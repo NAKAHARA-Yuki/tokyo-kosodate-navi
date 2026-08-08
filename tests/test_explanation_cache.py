@@ -56,13 +56,27 @@ def gemini(monkeypatch):
     return calls
 
 
+def lookup_key(bq) -> str:
+    """エンドポイントがキャッシュ参照に使ったキーを、発行されたクエリから取り出す。"""
+    for query, config in zip(bq.queries, bq.job_configs, strict=False):
+        if "benefit_explanations" in query:
+            return {p.name: p.value for p in config.query_parameters}["cache_key"]
+    raise AssertionError("キャッシュ参照のクエリが発行されていません")
+
+
 class TestCacheKey:
     """キーに含まれているものが1つでも変われば作り直しになること。"""
 
     def key(self, **overrides):
         import explanation_cache
 
-        args = {"benefit_id": "psid-1", "facts": "制度名: 児童手当", "model": "gemini-x", "prompt_version": 1}
+        args = {
+            "benefit_id": "psid-1",
+            "prompt": "【制度情報】\n制度名: 児童手当",
+            "model": "gemini-x",
+            "thinking_level": "HIGH",
+            "prompt_version": 1,
+        }
         args.update(overrides)
         return explanation_cache.cache_key(**args)
 
@@ -73,17 +87,59 @@ class TestCacheKey:
         "field,value",
         [
             ("benefit_id", "psid-2"),
-            ("facts", "制度名: 児童手当（改定）"),
+            ("prompt", "【制度情報】\n制度名: 児童手当（改定）"),
             ("model", "gemini-y"),
+            ("thinking_level", "LOW"),
             ("prompt_version", 2),
         ],
     )
     def test_key_changes_when_any_input_changes(self, field, value):
         assert self.key(**{field: value}) != self.key(), f"{field} を変えてもキーが同じ"
 
-    def test_key_survives_reordered_but_different_facts(self):
-        """事実文字列が1文字でも違えば別キーになること（部分一致で済ませていない）。"""
-        assert self.key(facts="制度名: 児童手当") != self.key(facts="制度名: 児童手当 ")
+    def test_key_survives_reordered_but_different_prompt(self):
+        """プロンプトが1文字でも違えば別キーになること（部分一致で済ませていない）。"""
+        assert self.key(prompt="制度名: 児童手当") != self.key(prompt="制度名: 児童手当 ")
+
+
+class TestKeyCoversTheWholePrompt:
+    """キーが「実際に Gemini へ送った文字列」を丸ごと覆っていること（PR #90 のレビュー指摘）。
+
+    事実文字列だけをキーにしていると、それを包む指示文（「書かれていないことは補わない」など）を
+    直してもキーが変わらず、**古いプロンプトで作った文章が無期限に返り続ける。**
+    ここが通っていれば、プロンプトの文言を変えた時点で自動的に別キーになるので、
+    PROMPT_VERSION を手で上げ忘れても取りこぼさない。
+    """
+
+    def test_key_is_derived_from_the_prompt_sent_to_gemini(self, client, bq, gemini):
+        import explanation_cache
+        from routers import support
+
+        bq.set_rows_sequence([BENEFIT_ROW], [])
+        client.post("/api/support/draft-review", json={"benefit_id": "psid-1"})
+
+        prompt_sent = gemini[0]
+        assert "制度情報に書かれていないことは絶対に補わない" in prompt_sent, (
+            "指示文がプロンプトに含まれていない。前提が崩れているのでこのテストの意味が無くなる"
+        )
+        assert lookup_key(bq) == explanation_cache.cache_key(
+            "psid-1", prompt_sent, support.GEMINI_MODEL, support.GEMINI_THINKING_LEVEL
+        ), "キャッシュキーが、実際に送ったプロンプトから作られていない"
+
+    def test_thinking_level_change_gives_a_different_key(self, client, bq, gemini, monkeypatch):
+        """thinking_level は出力の質を変える（実測で思考量が 206→509 トークン変わる）。"""
+        from routers import support
+
+        bq.set_rows_sequence([BENEFIT_ROW], [])
+        client.post("/api/support/draft-review", json={"benefit_id": "psid-1"})
+        before = lookup_key(bq)
+
+        bq.queries.clear()
+        bq.job_configs.clear()
+        monkeypatch.setattr(support, "GEMINI_THINKING_LEVEL", "LOW")
+        bq.set_rows_sequence([BENEFIT_ROW], [])
+        client.post("/api/support/draft-review", json={"benefit_id": "psid-1"})
+
+        assert lookup_key(bq) != before, "thinking_level を変えてもキーが同じ"
 
 
 class TestCacheBehaviour:
@@ -114,6 +170,9 @@ class TestCacheBehaviour:
         assert rows[0]["result"] == "いま生成したやさしい解説"
         assert rows[0]["benefit_id"] == "psid-1"
         assert rows[0]["generated_at"] == body["generated_at"]
+        # 後から「どのプロンプトで作ったか」を追えるように保存している。
+        assert rows[0]["thinking_level"] == "HIGH"
+        assert rows[0]["prompt_hash"]
 
     def test_result_is_identical_whether_cached_or_not(self, client, bq, gemini):
         """キャッシュの有無で利用者に見せる中身が変わらないこと。"""
