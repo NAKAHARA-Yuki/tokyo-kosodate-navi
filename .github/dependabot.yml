@@ -7,6 +7,12 @@
 # `make lock` を実行できず、生成には python:3.12-slim が要るため。
 # app/requirements.in を更新する PR が来たら、マージ前に `make lock` を回して
 # 同じ PR にロックを含めること（CONTRIBUTING.md）。
+#
+# **まとめるのはマイナー・パッチだけ。メジャーは1件ずつ来させる。**
+# 全部を1本にまとめていたら、まだ使えないメジャーが1つ混ざるだけで
+# 他の更新まで止まった（#88: typescript 7 と eslint 10 が未対応で、
+# 巻き添えで react のパッチ更新も入らなくなった）。
+# 分けておけば、通らないものだけがその PR で落ちる。
 version: 2
 updates:
   - package-ecosystem: pip
@@ -27,6 +33,9 @@ updates:
       python:
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: npm
     directory: "/frontend"
@@ -46,6 +55,9 @@ updates:
       npm:
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: "/"
@@ -57,7 +69,17 @@ updates:
       - "type: infra"
       - "area: ci"
       - "P3"
+    # Actions のメジャーは v4→v5 のような routine な更新で、互いに独立している。
+    # 1件ずつ来ると月に何本も開くので、ここだけはメジャーもまとめる（ただし別 PR に分ける）。
     groups:
       actions:
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch
+      actions-major:
+        patterns:
+          - "*"
+        update-types:
+          - major
