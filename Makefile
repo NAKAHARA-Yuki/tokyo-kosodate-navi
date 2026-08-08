@@ -268,7 +268,17 @@ lock: ## 本番イメージの依存を再固定する (app/requirements.in を�
 	@# $(abspath) を通してどちらでも同じように解決させる。
 	@if [ "$$($(PY) -c 'import sys; print("%d.%d" % sys.version_info[:2])')" = "3.12" ]; then \
 		echo "Python 3.12 のためそのまま解決します"; \
-		[ -x "$(abspath $(VENV))/bin/pip-compile" ] || $(PIP) install -q pip-tools; \
+		if [ ! -x "$(abspath $(VENV))/bin/pip-compile" ]; then \
+			$(PIP) install -q pip-tools || { \
+				echo ""; \
+				echo "❌ pip-tools を入れられませんでした。"; \
+				echo "   開発用コンテナなら、イメージに焼き込み済みのはずです。"; \
+				echo "   出ているならイメージが古いので、ホスト側で 'make agent-up' を"; \
+				echo "   実行し直してください（--build 付きで作り直されます）。"; \
+				echo "   （/usr/local も ~/.local も root 所有なので、実行時には入れられません）"; \
+				exit 1; \
+			}; \
+		fi; \
 		cd app && $(abspath $(VENV))/bin/pip-compile --quiet --no-strip-extras \
 			--generate-hashes --output-file requirements.lock requirements.in; \
 	else \
