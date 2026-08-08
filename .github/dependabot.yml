@@ -13,6 +13,9 @@
 # 他の更新まで止まった（#88: typescript 7 と eslint 10 が未対応で、
 # 巻き添えで react のパッチ更新も入らなくなった）。
 # 分けておけば、通らないものだけがその PR で落ちる。
+#
+# 分けるとメジャーの本数だけ PR が増えるので、`open-pull-requests-limit` も上げてある。
+# **上限に当たった分は静かに開かれない**（`ignore` を採らなかった理由と同じ見えなさになる）。
 version: 2
 updates:
   - package-ecosystem: pip
@@ -22,13 +25,14 @@ updates:
       day: monday
       time: "09:00"
       timezone: Asia/Tokyo
-    open-pull-requests-limit: 5
+    # まとめ1本＋メジャー個別。#89 の13件は分けると5本になり、5 だとちょうど上限に当たる。
+    open-pull-requests-limit: 10
     commit-message:
       prefix: chore
     labels:
       - "type: infra"
       - "P3"
-    # 1本の PR にまとめる。個別に来ると数が多く、レビューが追いつかない。
+    # マイナー・パッチは1本にまとめる。個別に来ると数が多く、レビューが追いつかない。
     groups:
       python:
         patterns:
@@ -44,13 +48,14 @@ updates:
       day: monday
       time: "09:00"
       timezone: Asia/Tokyo
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     commit-message:
       prefix: chore
     labels:
       - "type: infra"
       - "area: frontend"
       - "P3"
+    # マイナー・パッチは1本にまとめ、メジャーは1件ずつ来る。
     groups:
       npm:
         patterns:
