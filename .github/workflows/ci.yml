@@ -15,9 +15,9 @@ jobs:
     name: Lint & Unit/Integration Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -48,9 +48,9 @@ jobs:
     name: E2E (stub)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -61,7 +61,7 @@ jobs:
 
       # 画面は frontend（Next.js）が持つため、E2E は backend スタブと frontend の
       # 両方を起動する（e2e/conftest.py）。そのため Node.js が要る。
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
@@ -86,7 +86,7 @@ jobs:
 
       - name: 失敗時のスクリーンショットを保存
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-artifacts
           path: |
@@ -97,7 +97,7 @@ jobs:
     name: Docker build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Cloud Run へのデプロイ前に、イメージがビルドできることだけ確認する
       - name: アプリのイメージをビルド
@@ -110,9 +110,9 @@ jobs:
     name: Frontend Lint & Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
