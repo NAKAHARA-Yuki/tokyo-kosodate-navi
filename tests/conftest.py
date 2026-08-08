@@ -52,11 +52,16 @@ class FakeBigQueryClient:
         return self.queries[-1]
 
     def last_params(self) -> dict:
-        """最後のクエリに渡されたパラメータを {name: value} で返す。"""
+        """最後のクエリに渡されたパラメータを {name: value} で返す。
+
+        配列パラメータ（`ArrayQueryParameter`）は `.value` ではなく `.values` を持つ。
+        両方を扱えるようにしておかないと、配列を渡すクエリのテストが
+        AttributeError で落ちる（`ages` や `_fetch_next_steps` の `ids`）。
+        """
         config = self.job_configs[-1]
         if config is None or not getattr(config, "query_parameters", None):
             return {}
-        return {p.name: p.value for p in config.query_parameters}
+        return {p.name: (p.values if hasattr(p, "values") else p.value) for p in config.query_parameters}
 
 
 @pytest.fixture

@@ -5,8 +5,11 @@
 2. レスポンスの形が壊れていないか
 """
 
+from datetime import date
+
 import pytest
 from conftest import FakeQueryJob, FakeRow
+from routers.match import months_between
 
 
 def benefit_row(**overrides):
@@ -183,6 +186,51 @@ class TestMatchBenefits:
         reasons = res.json()["benefits"][0]["match_reasons"]
         assert any("推定" in r for r in reasons)
 
+    def test_matches_any_of_the_children(self, client, bq):
+        """きょうだいのいずれかが当たれば結果に含める（issue #75）。"""
+        bq.set_rows([])
+        client.get("/api/benefits/match?child_age_months=3&child_age_months=140&include_skill_tree=false")
+        assert "UNNEST(@ages)" in bq.last_query, bq.last_query
+        assert bq.last_params()["ages"] == [3, 140]
+
+    def test_reports_which_child_matched(self, client, bq):
+        """どの子が当たったかを返す。「上の子だけ対象」が普通にあるため。"""
+        bq.set_rows([self.match_row(effective_min_age_months=0, effective_max_age_months=36)])
+        res = client.get(
+            "/api/benefits/match?child_age_months=3&child_age_months=140&include_skill_tree=false"
+        )
+        item = res.json()["benefits"][0]
+        assert item["matched_child_age_months"] == [3], item
+        assert any("月齢3" in r for r in item["match_reasons"])
+        assert not any("月齢140" in r for r in item["match_reasons"])
+
+    def test_rejects_out_of_range_age(self, client, bq):
+        """配列にしても月齢の範囲チェックを効かせる。
+
+        Query(ge=..., le=...) は list の要素には効かないため、
+        Annotated で要素側に付け直している。ChildProfile 側（422）と基準を揃える。
+        """
+        bq.set_rows([])
+        assert client.get("/api/benefits/match?child_age_months=-5").status_code == 422
+        assert client.get("/api/benefits/match?child_age_months=99999").status_code == 422
+
+    def test_birth_date_is_accepted(self, client, bq):
+        """生年月日で指定するとサーバ側で月齢に換算する。"""
+        from datetime import date
+
+        from routers.match import months_between
+
+        bq.set_rows([])
+        birth = date(2019, 6, 1)
+        client.get(f"/api/benefits/match?child_birth_date={birth.isoformat()}&include_skill_tree=false")
+        assert bq.last_params()["ages"] == [months_between(birth)]
+
+    def test_single_child_still_works(self, client, bq):
+        """子ども1人だけの指定（従来の呼び方）も通る。"""
+        bq.set_rows([self.match_row()])
+        res = client.get("/api/benefits/match?child_age_months=40&include_skill_tree=false")
+        assert res.json()["count"] == 1
+
     def test_includes_tokyo_wide_benefits(self, client, bq):
         """東京都全域の制度(130001)も対象に含める。"""
         bq.set_rows([])
@@ -194,6 +242,22 @@ class TestMatchBenefits:
         client.get("/api/benefits/match?child_age_months=0&is_pregnant=true&include_skill_tree=false")
         assert "is_prenatal" in bq.last_query
 
+    def test_prenatal_row_does_not_claim_the_child_matched(self, client, bq):
+        """妊娠期の制度に「お子さんが該当」と書かない。
+
+        is_pregnant=true のときは年齢が範囲外でも is_prenatal で行が入る。
+        その行に年齢範囲が入っていると、以前は年齢で当たったかのような理由文を出していた
+        （利用者に事実でないことを言っていた）。当たった子がいるときだけ出す。
+        """
+        bq.set_rows(
+            [self.match_row(is_prenatal=True, effective_min_age_months=0, effective_max_age_months=12)]
+        )
+        res = client.get("/api/benefits/match?child_age_months=120&is_pregnant=true&include_skill_tree=false")
+        item = res.json()["benefits"][0]
+        assert item["matched_child_age_months"] == []
+        assert any("妊娠中" in r for r in item["match_reasons"])
+        assert not any("該当" in r for r in item["match_reasons"]), item["match_reasons"]
+
     def test_needs_confirmation_surfaced(self, client, bq):
         """自由記述条件が残る制度は、機械判定だけで確定させない。"""
         bq.set_rows([self.match_row(has_free_text_conditions=True, conditions_text="所得制限あり")])
@@ -203,20 +267,73 @@ class TestMatchBenefits:
         assert item["conditions_text"] == "所得制限あり"
 
 
+class TestMonthsBetween:
+    """生年月日から月齢を出す純粋ロジック（CLAUDE.md「純粋ロジックは必ずテストを書く」）。
+
+    `today` を渡せる設計にしてあるので、実行日に依存せず固定できる。
+    """
+
+    @pytest.mark.parametrize(
+        "birth, today, expected",
+        [
+            (date(2024, 1, 1), date(2024, 1, 1), 0),  # 生まれた日
+            (date(2024, 1, 15), date(2024, 2, 14), 0),  # 誕生日の前日はまだ0か月
+            (date(2024, 1, 15), date(2024, 2, 15), 1),  # 誕生日当日で1か月
+            (date(2024, 1, 15), date(2025, 1, 15), 12),  # 1歳
+            (date(2024, 2, 29), date(2025, 2, 28), 11),  # うるう日生まれ。2/28では12にしない
+            (date(2024, 2, 29), date(2025, 3, 1), 12),
+            # 対応する日が無い月をまたぐケース。1/31生まれの3/1は「2か月」ではなく「1か月」。
+            # 月齢バケットでの絞り込みが用途なので、この控えめな出方を**許容している**。
+            (date(2024, 1, 31), date(2024, 3, 1), 1),
+            (date(2024, 1, 31), date(2024, 3, 31), 2),
+            (date(2030, 1, 1), date(2024, 1, 1), 0),  # 未来日でも負にしない
+        ],
+    )
+    def test_months(self, birth, today, expected):
+        assert months_between(birth, today) == expected
+
+
 class TestUserProfile:
     def test_normalizes_age_label(self, client, bq):
         bq.set_rows([{"area_name": "台東区"}])
         res = client.post(
             "/api/user/profile",
-            json={"area_code": "131067", "child_age_months": 18},
+            json={"area_code": "131067", "children": [{"age_months": 18}]},
         )
         assert res.status_code == 200
-        assert res.json()["resolved"] == {"area_name": "台東区", "child_age_label": "1歳6か月"}
+        assert res.json()["resolved"] == {
+            "area_name": "台東区",
+            "children": [{"age_months": 18, "age_label": "1歳6か月"}],
+        }
 
     def test_exact_years_label(self, client, bq):
         bq.set_rows([{"area_name": "台東区"}])
-        res = client.post("/api/user/profile", json={"area_code": "131067", "child_age_months": 24})
-        assert res.json()["resolved"]["child_age_label"] == "2歳"
+        res = client.post("/api/user/profile", json={"area_code": "131067", "children": [{"age_months": 24}]})
+        assert res.json()["resolved"]["children"][0]["age_label"] == "2歳"
+
+    def test_multiple_children(self, client, bq):
+        """きょうだいをまとめて登録できる（issue #75）。"""
+        bq.set_rows([{"area_name": "台東区"}])
+        res = client.post(
+            "/api/user/profile",
+            json={"area_code": "131067", "children": [{"age_months": 18}, {"age_months": 96}]},
+        )
+        labels = [c["age_label"] for c in res.json()["resolved"]["children"]]
+        assert labels == ["1歳6か月", "8歳"]
+
+    def test_birth_date_is_converted_to_months(self, client, bq):
+        """生年月日を正とする。月齢は時間で変わるので保存すると古くなる。"""
+        from datetime import date
+
+        from routers.match import months_between
+
+        bq.set_rows([{"area_name": "台東区"}])
+        birth = date(2019, 6, 1)
+        res = client.post(
+            "/api/user/profile",
+            json={"area_code": "131067", "children": [{"birth_date": birth.isoformat()}]},
+        )
+        assert res.json()["resolved"]["children"][0]["age_months"] == months_between(birth)
 
     def test_unknown_area_rejected(self, client, bq):
         bq.set_rows([])
