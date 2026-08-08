@@ -54,10 +54,70 @@ class TestExtractLinks:
     """元データは本文に `タイトル;https://...` 形式でリンクを直接埋め込んでいる。"""
 
     def test_separates_link_from_text(self):
-        links, plain = extract_links("詳しくは 予防接種の案内;https://example.com/a.html をご覧ください")
+        links, plain = extract_links("予防接種の案内;https://example.com/a.html をご覧ください")
         assert links == [{"title": "予防接種の案内", "uri": "https://example.com/a.html"}]
         assert "https://" not in plain
         assert "予防接種の案内" in plain
+
+    def test_title_can_contain_spaces(self):
+        """タイトルに空白が含まれていても切り詰めない（issue #80）。
+
+        以前は空白を跨げず、`;` の直前のトークンだけを拾っていた。
+        実データの 4.1%（1,516件）が `30.5KB)` のようなサイズ表記の断片になっていた。
+        """
+        links, _ = extract_links(
+            "ひとり親家庭医療費助成制度に係る第三者行為による傷病届 "
+            "(PDFファイル: 30.5KB);https://example.com/a.pdf"
+        )
+        assert links[0]["title"] == (
+            "ひとり親家庭医療費助成制度に係る第三者行為による傷病届 (PDFファイル: 30.5KB)"
+        )
+
+    def test_does_not_swallow_the_preceding_sentence(self):
+        """句点をタイトルに含めない。
+
+        空白を跨げるようにした副作用で、直前の文まで飲み込みうる。
+        日本語の本文は空白で区切られないため、句点で止める必要がある。
+        実データでは 1,495件がこの状態だった。
+        """
+        links, _ = extract_links("給付先は保護者となります。申請方法はこちら;https://example.com/b.html")
+        assert links[0]["title"] == "申請方法はこちら"
+
+    def test_url_only_title_is_dropped(self):
+        """タイトルが裸のURLそのものなら表示名として使わない（issue #80）。
+
+        本文にURLが並記されている箇所で起きる。実データで19件。
+        title=None にすると、API 側（_links）が uri を表示名に使うフォールバックに乗る。
+        """
+        links, plain = extract_links("https://example.com/old.html;https://example.com/new.html")
+        assert links[0]["title"] is None
+        assert links[0]["uri"] == "https://example.com/new.html"
+        # 本文はタイトルの取り方に影響されない
+        assert "https://example.com/old.html" in plain
+
+    def test_title_with_text_and_url_is_kept(self):
+        """URLを含んでいても、意味のある文字列があるタイトルは捨てない。
+
+        「…「医療情報ネット」https://…（外部サイト）」のような形が実データにある。
+        URLを一律に剥がすと、この手前の文字列まで失われる。
+        """
+        links, _ = extract_links(
+            "「医療情報ネット」https://example.com/net/（外部サイト）;https://example.com/a.html"
+        )
+        assert links[0]["title"] == "「医療情報ネット」https://example.com/net/（外部サイト）"
+
+    def test_does_not_cross_newline(self):
+        links, _ = extract_links("前の行の文章\n申請書のダウンロード;https://example.com/c.pdf")
+        assert links[0]["title"] == "申請書のダウンロード"
+
+    def test_leading_prose_is_included_when_no_delimiter(self):
+        """区切りが無ければ、直前の語もタイトルに入る（許容している挙動）。
+
+        「詳しくは」のような導入句まで含まれてしまうが、
+        タイトルがサイズ表記の断片になるより害が小さいという判断（issue #80）。
+        """
+        links, _ = extract_links("詳しくは 予防接種の案内;https://example.com/a.html")
+        assert links[0]["title"] == "詳しくは 予防接種の案内"
 
     def test_stops_at_fullwidth_paren(self):
         """URL の後に全角括弧が続く場合、括弧を URL に含めない。"""
