@@ -90,6 +90,57 @@ class TestSourceAndDisclaimer:
         expect(top_page.locator("main ul li").first).to_be_visible()
 
 
+def _relative_luminance(rgb: tuple[int, int, int]) -> float:
+    def channel(value: int) -> float:
+        v = value / 255
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+
+    r, g, b = (channel(c) for c in rgb)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _rgb(css_color: str) -> tuple[int, int, int]:
+    """`rgb(51, 51, 51)` / `rgba(...)` を (r, g, b) にする。"""
+    values = css_color[css_color.index("(") + 1 : css_color.index(")")].split(",")
+    return tuple(int(float(v)) for v in values[:3])
+
+
+def contrast_ratio(foreground: str, background: str) -> float:
+    """WCAG のコントラスト比。AA は本文で 4.5:1 以上。"""
+    a, b = _relative_luminance(_rgb(foreground)), _relative_luminance(_rgb(background))
+    return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+
+
+class TestReadableInDarkMode:
+    """OS の設定がダークモードでも文字が読めること（issue #101）。
+
+    デジタル庁デザインシステムのトークンはライト前提の**固定色**なので、
+    `body` の背景だけを反転させると黒地に濃いグレーの文字が乗る。
+    staging の実機で測ったときは本文 1.57:1 / リンク 1.39:1 で、事実上読めなかった。
+
+    **コントラスト比で見ているのは、対処の仕方を縛らないため。** いまは
+    `globals.css` の `prefers-color-scheme` を外して固定しているが、
+    将来ダークモードにきちんと対応した場合もこのテストは通ってよい。
+    """
+
+    @pytest.fixture
+    def dark_page(self, browser, base_url):
+        context = browser.new_context(color_scheme="dark")
+        page = context.new_page()
+        page.set_default_timeout(15_000)
+        page.goto(base_url)
+        page.wait_for_selector("main ul li")
+        yield page
+        context.close()
+
+    @pytest.mark.parametrize("selector,label", [("main li p", "制度の概要"), ("main li a", "制度名のリンク")])
+    def test_text_has_enough_contrast(self, dark_page, selector, label):
+        background = dark_page.evaluate("getComputedStyle(document.body).backgroundColor")
+        color = dark_page.evaluate(f"getComputedStyle(document.querySelector({selector!r})).color")
+        ratio = contrast_ratio(color, background)
+        assert ratio >= 4.5, f"{label}が読めません: {color} on {background} = {ratio:.2f}:1"
+
+
 class TestBenefitDetail:
     """詳細ページに制度の本文・条件の原文・申請リンクが出ること（issue #63）。
 
