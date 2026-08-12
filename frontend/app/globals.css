@@ -15,12 +15,20 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* ダークモードには**まだ対応しない。**
+   `create-next-app` の雛形には prefers-color-scheme のブロックがあったが、外した。
+
+   body の背景だけが黒くなる一方、中身はデジタル庁デザインシステムのトークン
+   （text-solid-gray-800 = #333333 など）を直接指定していて切り替わらない。
+   結果、黒地に濃いグレーの文字が乗る。staging の実機で測ると
+
+     本文     #333333 on #0a0a0a  → 1.57:1
+     リンク   #00118f on #0a0a0a  → 1.39:1
+
+   WCAG AA は 4.5:1 なので、事実上読めない。行政情報を扱う画面で「読めない」は
+   機能していないのと同じなので、中途半端に反転させるより固定する方が害が小さい。
+
+   ちゃんと対応するなら、全トークンにダーク用の値を当てて手動切り替えも用意する（#101）。 */
 
 body {
   background: var(--background);
