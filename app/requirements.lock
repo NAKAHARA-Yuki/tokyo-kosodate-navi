@@ -341,9 +341,9 @@ google-crc32c==1.8.0 \
     --hash=sha256:f4b51844ef67d6cf2e9425983274da75f18b1597bb2c998e1c0a0e8d46f8f651 \
     --hash=sha256:f639065ea2042d5c034bf258a9f085eaa7af0cd250667c0635a3118e8f92c69c
     # via google-resumable-media
-google-genai==2.16.0 \
-    --hash=sha256:c4c2524926001b18073db927a5d75bb7c8be7b5fd13ab507d599f51fff2284c5 \
-    --hash=sha256:f9eda6a7a3dd4491a0d2253c4bdd4536462d63838ed3f1b0e4fb9a0eb8f43331
+google-genai==2.17.0 \
+    --hash=sha256:6b640a2390c82b4a240873eddb9f518c6d2c33244b2de16ed3d14526a6da7f57 \
+    --hash=sha256:a4835563c60aee646c9c4b261c507aa4a624710d25017012d20dc65abf3d9a54
     # via -r requirements.in
 google-resumable-media==2.10.0 \
     --hash=sha256:88152884bee37b2bf36a0ab81ad8c7fd12212c9803dd981d77c1b35b02d34e7c \
