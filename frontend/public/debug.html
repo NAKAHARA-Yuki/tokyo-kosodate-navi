@@ -373,7 +373,9 @@
 
     <div>
       <p class="sub" style="margin-bottom:6px;">属性で絞り込む（ユーザープロフィール想定）</p>
-      <select id="area-select" style="margin-bottom:6px;">
+      <!-- 見出しの <p> とは別に、支援技術向けの名前を付ける（#58）。
+           visible なラベルを増やすと画面が変わるため aria-label にしている。 -->
+      <select id="area-select" aria-label="居住地" style="margin-bottom:6px;">
         <option value="">居住地を選択（すべて）</option>
       </select>
       <div style="display:flex; gap:6px;">
