@@ -137,6 +137,86 @@ class TestExtractLinks:
         assert extract_links(None) == ([], None)
 
 
+class TestUriDoesNotSwallowTheText:
+    """URL 側が後ろの本文や次のリンクを飲み込まないこと（issue #86）。
+
+    元データは `タイトル;URL` を本文中に**空白なしで**埋め込んでおり、URL の直後に
+    本文がそのまま続く。空白だけを終端にしていた頃は、実データ 35,122件のうち
+    5,236件（14.9%）の URI に本文が混ざっていた。この URI は詳細ページの
+    関連リンクとして画面に出るため（#63）、放置すると利用者が 404 を踏む。
+    """
+
+    def test_prose_after_a_file_link_is_dropped(self):
+        """`…/R6riyouyakkan.pdfを必ずご確認ください` の形。issue の実例1。"""
+        links, plain = extract_links(
+            "利用約款;https://example.lg.jp/babysitter.files/R6riyouyakkan.pdfを必ずご確認ください"
+        )
+        assert links[0]["uri"] == "https://example.lg.jp/babysitter.files/R6riyouyakkan.pdf"
+        # 飲み込んでいた本文は捨てずに本文側へ戻す
+        assert "を必ずご確認ください" in plain
+
+    def test_consecutive_links_are_split(self):
+        """`A;url・B;url・C;url` が3件に分かれること。issue の実例2。
+
+        `;` を URL の終端に含めていなかったため、3本分が1本の URI に潰れていた。
+        """
+        links, _plain = extract_links(
+            "中部第一福祉課;https://example.lg.jp/a.html"
+            "・中部第二福祉課;https://example.lg.jp/b.html"
+            "・千住福祉課;https://example.lg.jp/c.html"
+        )
+        assert [link["uri"] for link in links] == [
+            "https://example.lg.jp/a.html",
+            "https://example.lg.jp/b.html",
+            "https://example.lg.jp/c.html",
+        ]
+
+    def test_prose_starting_with_hiragana_is_dropped(self):
+        """ひらがなは本文の始まりの目印。URL のパスには助詞が現れない。"""
+        links, _plain = extract_links("案内;https://example.jp/apply/guide/60からの申し込みが可能です")
+        assert links[0]["uri"] == "https://example.jp/apply/guide/60"
+
+    def test_japanese_path_is_kept(self):
+        """**日本語を含む正当な URL は壊さない。** 非ASCII を一律に切ってはいけない。"""
+        links, _plain = extract_links("産後ケア;https://example.jimdo.com/産後ケアよりお申し込みください")
+        assert links[0]["uri"] == "https://example.jimdo.com/産後ケア"
+
+    def test_all_japanese_path_is_kept_whole(self):
+        """パス全体が日本語の URL も実在する（漢字・カタカナだけなので本文と区別できる）。"""
+        links, _plain = extract_links("案内;https://example-hp.com/診療科-部門紹介/妊婦健診産後ケア/")
+        assert links[0]["uri"] == "https://example-hp.com/診療科-部門紹介/妊婦健診産後ケア/"
+
+    def test_fragment_is_kept(self):
+        """`#anchor` は URL の一部。拡張子まで戻して切ってはいけない。"""
+        links, _plain = extract_links("無償化;https://example.lg.jp/musyoka.html#ninnkagaiについては")
+        assert links[0]["uri"] == "https://example.lg.jp/musyoka.html#ninnkagai"
+
+    def test_percent_encoded_fragment_is_kept(self):
+        links, _plain = extract_links("案内;https://example.lg.jp/p001472.html#%E4%BF%9D%E8%82%B2")
+        assert links[0]["uri"] == "https://example.lg.jp/p001472.html#%E4%BF%9D%E8%82%B2"
+
+    def test_url_in_a_query_parameter_is_kept(self):
+        """読み上げサービスのように URL をパラメータに持つ URL がある。"""
+        raw = "音声読み上げ;http://example.com/rsent?customerid=7767&url=https://example.lg.jp/a.html"
+        links, _plain = extract_links(raw)
+        assert links[0]["uri"] == raw.split(";", 1)[1]
+
+    @pytest.mark.parametrize(
+        "suffix,expected_tail",
+        [("」", "」"), ("¥1,000", "¥1,000"), ("＜対象＞", "＜対象＞"), ("【施設】", "【施設】")],
+    )
+    def test_fullwidth_symbols_are_not_part_of_the_url(self, suffix, expected_tail):
+        """非ASCII の記号・約物は URL に含めない（実データで `」` 456件など）。"""
+        links, plain = extract_links(f"案内;https://example.lg.jp/a.html{suffix}")
+        assert links[0]["uri"] == "https://example.lg.jp/a.html"
+        assert expected_tail in plain
+
+    def test_kanji_after_an_extension_is_prose(self):
+        """`…/jikan.html等` の形。漢字だけなのでひらがな規則では拾えない。"""
+        links, _plain = extract_links("保育時間;https://example.lg.jp/hoikuen/jikan.html等")
+        assert links[0]["uri"] == "https://example.lg.jp/hoikuen/jikan.html"
+
+
 class TestSplitBelongings:
     def test_does_not_split_on_ideographic_comma(self):
         """読点で切ると一文が途中でぶつ切りになる（実際に起きたバグ）。"""
