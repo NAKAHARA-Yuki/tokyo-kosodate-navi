@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { fetchBackend } from "@/lib/backend";
 import type { BenefitLink, Subgraph, SubgraphNode } from "@/lib/types";
+import { AgeChip } from "@/components/age-chip";
 import { Heading } from "@/components/dads/heading";
 import { ChipLabel } from "@/components/dads/chip-label";
 import { Link } from "@/components/dads/link";
@@ -135,6 +136,11 @@ export default async function BenefitDetail({ params }: { params: Promise<{ id: 
           </ChipLabel>
         )}
         {benefit.area_name && <ChipLabel variant="text">{benefit.area_name}</ChipLabel>}
+        <AgeChip
+          source={benefit.age_source ?? "unknown"}
+          minMonths={benefit.min_age_months ?? null}
+          maxMonths={benefit.max_age_months ?? null}
+        />
         {benefit.is_free && (
           <ChipLabel variant="filled-1" color="green">
             無料

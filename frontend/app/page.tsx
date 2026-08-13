@@ -1,3 +1,4 @@
+import { AgeChip } from "@/components/age-chip";
 import { fetchBackend } from "@/lib/backend";
 import type { Benefit } from "@/lib/types";
 import { Heading } from "@/components/dads/heading";
@@ -59,6 +60,11 @@ export default async function Home() {
                   {b.category}
                 </ChipLabel>
                 {b.area_name && <ChipLabel variant="text">{b.area_name}</ChipLabel>}
+                <AgeChip
+                  source={b.age_source}
+                  minMonths={b.min_age_months}
+                  maxMonths={b.max_age_months}
+                />
                 {b.is_free && (
                   <ChipLabel variant="filled-1" color="green">
                     無料

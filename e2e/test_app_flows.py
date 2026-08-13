@@ -141,6 +141,59 @@ class TestReadableInDarkMode:
         assert ratio >= 4.5, f"{label}が読めません: {color} on {background} = {ratio:.2f}:1"
 
 
+class TestAgeSourceIsShown:
+    """対象年齢を、**どれだけ信用してよいかが分かる形**で出すこと（issue #61）。
+
+    `age_source` は `explicit`（元データに記載）/ `inferred`（本文から推定）/
+    `unknown`（読み取れず）の3種類。実データでは inferred が 30.0%、unknown が 34.2% で、
+    **6割超が「元データに年齢が書かれていない」制度**にあたる。
+
+    ここを黙って explicit と同じ見た目で出すと、こちらの推定を自治体が定めた条件のように
+    見せることになる（CLAUDE.md「推定値をユーザーに見せるときは『推定』と明示する」）。
+
+    旧 `/debug` にはこの表示があったが（`TestBenefitFocus` 参照）、
+    **新しいトップページには検証が無かった**（issue #61 で指摘されていた）。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _stub_only(self):
+        if os.environ.get("E2E_BASE_URL"):
+            pytest.skip("3種類すべてが一覧の先頭に来る保証が無いため、実データでは実行しない")
+
+    @pytest.fixture
+    def chips(self, page, base_url):
+        page.set_default_timeout(15_000)
+        page.goto(base_url)
+        page.wait_for_selector("main ul li")
+        return page.locator('[data-testid="age-chip"]')
+
+    def test_explicit_age_has_no_estimate_marker(self, chips):
+        texts = chips.all_inner_texts()
+        assert any(t == "対象 3歳〜3歳11か月" for t in texts), f"明示された年齢が出ていない: {texts}"
+
+    def test_inferred_age_is_marked_as_estimate(self, chips):
+        """**推定であることが文言で分かること。** 色だけに頼らない（WCAG 1.4.1）。"""
+        texts = chips.all_inner_texts()
+        assert any("（推定）" in t for t in texts), f"推定である旨が出ていない: {texts}"
+
+    def test_unknown_age_does_not_show_a_range(self, chips):
+        """読み取れなかったものに範囲を出さない。
+
+        範囲は NULL なので「0か月〜」のような既定値を当てると、
+        **読み取れなかったという事実が消える。**
+        """
+        texts = chips.all_inner_texts()
+        assert any(t == "対象年齢の記載なし" for t in texts), f"記載なしの表示が無い: {texts}"
+
+    def test_detail_page_shows_it_too(self, page, base_url):
+        page.set_default_timeout(15_000)
+        page.goto(base_url)
+        page.wait_for_selector("main ul li")
+        page.locator("main ul li a").first.click()
+        page.wait_for_url(re.compile(r"/benefits/"))
+        expect(page.locator('[data-testid="age-chip"]')).to_be_visible()
+
+
 class TestBenefitDetail:
     """詳細ページに制度の本文・条件の原文・申請リンクが出ること（issue #63）。
 
