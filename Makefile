@@ -131,7 +131,11 @@ setup: ## 仮想環境と依存関係を用意する（コンテナ内では不�
 .PHONY: auth
 auth: ## Claude Code 経由の GCP アクセスを claude-dev に切り替える（初回に1度）
 	@# 認証だけは個人ごとなのでコンテナに焼き込めない。ここを1コマンドにしている。
-	@if [ ! -f "$(HOME)/.config/gcloud/application_default_credentials.json" ]; then \
+	@# 起点の ADC が無くても、生成済みの claude-dev-adc.json が有効なら通す。
+	@# あちらは refresh token を内包していて起点を参照しないため、起点が消えても使える。
+	@# 両方無いときだけ止める（有効かどうかの判定はスクリプト側が実際に読んで確かめる）。
+	@if [ ! -f "$(HOME)/.config/gcloud/application_default_credentials.json" ] && \
+	    [ ! -f "$(HOME)/.config/gcloud/claude-dev-adc.json" ]; then \
 		echo "先に gcloud の認証が要ります:"; \
 		echo "   gcloud auth application-default login"; \
 		exit 1; \
