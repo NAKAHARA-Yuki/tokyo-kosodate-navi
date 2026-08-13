@@ -78,6 +78,17 @@ class TestNewPagesHaveNoViolations:
         assert_clean(detail, WCAG_AA, "詳細ページ（AA）")
         assert_clean(detail, BEST_PRACTICE, "詳細ページ（best-practice）")
 
+    def test_settings_page(self, page, base_url):
+        """設定画面（issue #53）。フォームがあるので、ラベルの紐づけがここで効く。
+
+        フォームはクライアント限定で描画しているため、要素が出るまで待つ。
+        """
+        page.set_default_timeout(15_000)
+        page.goto(f"{base_url}/settings")
+        page.wait_for_selector('[data-testid="apply-profile"]')
+        assert_clean(page, WCAG_AA, "設定画面（AA）")
+        assert_clean(page, BEST_PRACTICE, "設定画面（best-practice）")
+
     def test_not_found_page(self, page, base_url):
         """404 も同じ基準で守る。
 

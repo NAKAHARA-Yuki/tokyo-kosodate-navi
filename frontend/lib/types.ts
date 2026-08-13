@@ -17,6 +17,21 @@ export type Benefit = {
   electronic_submission: boolean;
 };
 
+// GET /api/areas のレスポンス（app/routers/benefits.py: get_areas）。
+export type Area = { area_code: string; area_name: string; count: number };
+
+// GET /api/benefits/match のレスポンス（app/routers/match.py: match_benefits）。
+// 一覧の Benefit に「なぜ当たったか」を足した形。判定はサーバ側の確定クエリで行い、
+// ここには根拠の文字列だけが返る（ADR 0001）。
+export type MatchedBenefit = Benefit & {
+  match_reasons: string[];
+  matched_child_age_months: number[];
+  needs_confirmation?: boolean;
+  conditions_text?: string | null;
+};
+
+export type MatchResponse = { count: number; benefits: MatchedBenefit[] };
+
 // 本文に埋め込まれていたリンク（ETL の extract_links() が分離したもの）。
 export type BenefitLink = { title: string; uri: string };
 

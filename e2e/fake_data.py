@@ -190,6 +190,91 @@ DRAFT_REVIEW_ROWS = [
 ]
 
 
+# --- /api/benefits/match 用 -------------------------------------------------
+#
+# match は一覧と違う列を読む（effective_*, is_prenatal, is_single_parent_target …）。
+# 一覧と同じ行を返すと KeyError になるので、必要な列を足した別の集合にしている。
+AREA_TAITO = "131067"
+AREA_CHIYODA = "131016"
+
+
+def _match_row(
+    base: dict,
+    *,
+    area_code: str,
+    is_prenatal: bool = False,
+    single_parent: bool = False,
+    disability: bool = False,
+) -> dict:
+    """一覧用の行に、match が読む列を足す。"""
+    row = dict(base)
+    row["effective_min_age_months"] = base.get("min_age_months")
+    row["effective_max_age_months"] = base.get("max_age_months")
+    row.pop("min_age_months", None)
+    row.pop("max_age_months", None)
+    row.update(
+        area_code=area_code,
+        is_prenatal=is_prenatal,
+        is_single_parent_target=single_parent,
+        is_disability_target=disability,
+        conditions_text=None,
+        official_url="https://example.com/apply",
+        scheme_id="SCHEME_x",
+    )
+    return row
+
+
+MATCH_BENEFITS = [
+    _match_row(BENEFITS[0], area_code=AREA_TAITO),  # 3歳児健診 36〜47
+    _match_row(BENEFITS[1], area_code=AREA_TAITO),  # 児童手当 0〜227
+    _match_row(BENEFITS[2], area_code=AREA_TAITO),  # あそびひろば 0〜36（推定）
+    _match_row(BENEFITS[3], area_code=AREA_TAITO),  # 子育て相談窓口（年齢不明）
+    _match_row(
+        {
+            **BENEFITS[0],
+            "benefit_id": "psid-chiyoda-1",
+            "title": "妊婦健康診査（千代田区）",
+            "area_name": "千代田区",
+            "min_age_months": None,
+            "max_age_months": None,
+        },
+        area_code=AREA_CHIYODA,
+        is_prenatal=True,
+    ),
+]
+
+
+def _matches_ages(row: dict, ages: list[int]) -> bool:
+    """`app/queries.py` の `ages_filter_sql()` と同じ判定。**NULL は素通り**させる。
+
+    素通りが正しい。実データの 34.2% は年齢が読み取れておらず、ここで落とすと
+    「対象なのに出ない」を作る（CLAUDE.md）。スタブの方が実装より厳しいと、
+    実装が正しいのにテストが落ちる、という逆転が起きる。
+    """
+    lo = row.get("effective_min_age_months")
+    hi = row.get("effective_max_age_months")
+    return any((lo is None or lo <= a) and (hi is None or hi >= a) for a in ages)
+
+
+def _match(query: str, params: dict) -> list[dict]:
+    """`/api/benefits/match` の絞り込みをスタブ側でも再現する。
+
+    **params を無視して全件返してはいけない。** それだと「属性を指定したら件数が変わる」
+    という検証が、絞り込みを丸ごと外しても通ってしまう（issue #64 / #110 と同じ穴）。
+    """
+    # 妊娠中かどうかはクエリパラメータではなく SQL 文に現れる（is_prenatal を OR で足す）
+    include_prenatal = "is_prenatal" in query
+    rows = list(MATCH_BENEFITS)
+    if (area := params.get("area_code")) is not None:
+        rows = [r for r in rows if r["area_code"] in (area, "130001")]
+    ages = params.get("ages")
+    if ages:
+        rows = [r for r in rows if _matches_ages(r, list(ages)) or (include_prenatal and r["is_prenatal"])]
+    elif include_prenatal:
+        rows = [r for r in rows if r["is_prenatal"]]
+    return rows
+
+
 def rows_for(query: str, params: dict | None = None) -> list[dict]:
     """発行されたクエリの内容から、返すべきスタブ行を選ぶ。
 
@@ -218,6 +303,8 @@ def rows_for(query: str, params: dict | None = None) -> list[dict]:
         return CATEGORIES
     if "target_persons_text" in query and "procedure_method" in query:
         return DRAFT_REVIEW_ROWS
+    if "is_single_parent_target" in query:
+        return _match(query, params)
     if "SELECT area_name" in query:
         return PROFILE_ROWS
     return BENEFITS

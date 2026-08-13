@@ -588,3 +588,91 @@ class TestSmoke:
     def test_top_page_renders(self, app_page):
         expect(app_page.locator("h1")).to_be_visible()
         assert app_page.locator(".result-item").count() > 0
+
+
+class TestSettingsAndModelUsers:
+    """設定画面から属性を入れて絞り込む（issue #53 / #35）。
+
+    **トップページには入力欄を置かない。** 一覧を見るたびにフォームが挟まるのを避け、
+    `/settings` に集約している。入力結果は URL のクエリとして渡り、
+    判定はサーバ側の確定クエリが行う（ADR 0001。LLM は挟まない）。
+
+    ここで見るのは「絞り込みが実際に効いているか」。
+    **「1件以上出る」では、絞り込みを丸ごと外しても通る**（#110 で同じ穴を潰したばかり）。
+    出てはいけないものが消えていることを見る。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _stub_only(self):
+        if os.environ.get("E2E_BASE_URL"):
+            pytest.skip("スタブの制度構成に依存するため、実データに対しては実行しない")
+
+    def titles(self, page):
+        page.wait_for_selector("main ul li")
+        return page.locator("main ul li a").all_inner_texts()
+
+    def test_top_page_has_no_input_form(self, page, base_url):
+        """トップに入力欄を置かない、という判断を固定する。"""
+        page.set_default_timeout(15_000)
+        page.goto(base_url)
+        page.wait_for_selector("main ul li")
+        assert page.locator("main select").count() == 0
+        assert page.locator('main input[type="date"]').count() == 0
+
+    def test_header_links_to_settings(self, page, base_url):
+        page.set_default_timeout(15_000)
+        page.goto(base_url)
+        page.locator('header a[href="/settings"]').click()
+        page.wait_for_url(re.compile(r"/settings"))
+        expect(page.locator("main h1")).to_contain_text("条件を設定")
+
+    def test_model_user_fills_the_form_and_filters(self, page, base_url):
+        """モデルユーザーを選ぶと、その条件で絞り込まれること（issue #35）。"""
+        page.set_default_timeout(15_000)
+        page.goto(f"{base_url}/settings")
+        page.wait_for_selector('[data-testid="model-user-baby"]')
+        page.locator('[data-testid="model-user-baby"]').click()
+        page.locator('[data-testid="apply-profile"]').click()
+        page.wait_for_url(re.compile(r"area_code="))
+
+        titles = self.titles(page)
+        # 台東区・生後4か月。3歳児健診（36〜47ヶ月）は対象外なので消えていること
+        assert not any("3歳児健康診査" in t for t in titles), f"対象外の制度が残っています: {titles}"
+        assert any("児童手当" in t for t in titles), f"対象の制度が消えています: {titles}"
+
+    def test_area_filter_excludes_other_areas(self, page, base_url):
+        """台東区を選んだら千代田区の制度が消えること。
+
+        「選んだ区のものが出る」だけでは、絞り込まず全件返していても通る。
+        """
+        page.set_default_timeout(15_000)
+        page.goto(f"{base_url}/?area_code=131067&child_age_months=40")
+        titles = self.titles(page)
+        assert not any("千代田区" in t for t in titles), f"他の自治体が残っています: {titles}"
+
+    def test_match_reasons_are_shown(self, page, base_url):
+        """なぜ対象なのかを必ず添える（判定を LLM に任せない設計の要）。"""
+        page.set_default_timeout(15_000)
+        page.goto(f"{base_url}/?area_code=131067&child_age_months=40")
+        page.wait_for_selector("main ul li")
+        text = page.locator("main ul li").first.inner_text()
+        assert "台東区" in text or "対象" in text, f"マッチ理由が出ていません: {text}"
+
+    def test_url_reproduces_the_same_result(self, page, base_url):
+        """URL を共有すると同じ結果が出ること（#53 の完了条件）。"""
+        page.set_default_timeout(15_000)
+        url = f"{base_url}/?area_code=131067&child_age_months=40"
+        page.goto(url)
+        first = self.titles(page)
+        page.goto(url)
+        assert self.titles(page) == first
+
+    def test_no_attributes_shows_everything(self, page, base_url):
+        """属性が無ければ絞り込まない（入力を強制しない）。"""
+        page.set_default_timeout(15_000)
+        page.goto(base_url)
+        page.wait_for_selector('[data-testid="filter-status"]')
+        expect(page.locator('[data-testid="filter-status"]')).to_contain_text("すべての制度")
+        page.goto(f"{base_url}/?area_code=131067&child_age_months=40")
+        page.wait_for_selector('[data-testid="filter-status"]')
+        expect(page.locator('[data-testid="filter-status"]')).to_contain_text("絞り込んでいます")
