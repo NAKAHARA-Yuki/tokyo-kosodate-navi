@@ -323,8 +323,13 @@ e2e: ## E2Eテストを実行する（ブラウザ操作。GCP不要）
 e2e-smoke: ## デプロイ先に対してスモークテストを実行する (例: make e2e-smoke ENV=staging)
 	E2E_BASE_URL=$$($(MAKE) --no-print-directory url ENV=$(ENV)) $(VENV)/bin/pytest e2e -m smoke
 
+.PHONY: test-frontend
+test-frontend: ## frontend のユニットテストを実行する (vitest)
+	@# lib/backend.ts の認証分岐は E2E では片側しか通らない（issue #64）。
+	cd frontend && npm test
+
 .PHONY: check
-check: lint test e2e ## lint・テスト・E2E をまとめて実行する
+check: lint test test-frontend e2e ## lint・テスト・E2E をまとめて実行する
 
 # ---------------------------------------------------------------- アプリ
 

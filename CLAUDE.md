@@ -50,6 +50,7 @@ frontend/       Cloud Run で動く Next.js（別サービス）。画面はす�
   app/api/[...path]/route.ts  backend への catch-all プロキシ
   public/debug.html  開発用画面（素のJS + cytoscape.js）。/debug で配信。撤去しない（docs/adr/0014）
 tests/          ユニット・API結合テスト（BigQuery はモック）
+                 frontend のユニットテストは frontend/lib/*.test.ts（vitest。`make test-frontend`）
 e2e/            Playwright による画面操作テスト。
                  test_accessibility.py は axe で WCAG AA 相当を機械的に守る（docs/adr/0016）
 docs/           設計ドキュメントと ADR
