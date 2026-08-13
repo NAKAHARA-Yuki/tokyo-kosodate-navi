@@ -26,11 +26,18 @@ export type Area = { area_code: string; area_name: string; count: number };
 export type MatchedBenefit = Benefit & {
   match_reasons: string[];
   matched_child_age_months: number[];
+  /** 指定した属性のうち、この制度が該当するもの。**絞り込みではなく見出しに使う** */
+  matched_attributes: string[];
   needs_confirmation?: boolean;
   conditions_text?: string | null;
 };
 
-export type MatchResponse = { count: number; benefits: MatchedBenefit[] };
+export type MatchResponse = {
+  count: number;
+  benefits: MatchedBenefit[];
+  /** 属性キー → 表示名。文言は backend が持つ（画面と二重管理しない） */
+  attribute_labels: Record<string, string>;
+};
 
 // 本文に埋め込まれていたリンク（ETL の extract_links() が分離したもの）。
 export type BenefitLink = { title: string; uri: string };

@@ -179,6 +179,37 @@ class TestMatchBenefits:
         client.get("/api/benefits/match?area_code=131067&include_skill_tree=false")
         assert "is_single_parent_target DESC" not in bq.last_query
 
+    def test_matched_attributes_are_returned_as_structure(self, client, bq):
+        """属性の一致を**理由文とは別に構造で返す**（画面が見出しに使う）。
+
+        理由文だけだと画面が文字列を突き合わせることになり、表現を変えた瞬間に壊れる。
+        """
+        bq.set_rows([self.match_row(is_single_parent_target=True, is_disability_target=True)])
+        res = client.get(
+            "/api/benefits/match?is_single_parent=true&has_disability=true&include_skill_tree=false"
+        )
+        body = res.json()
+        assert body["benefits"][0]["matched_attributes"] == ["single_parent", "disability"]
+        # 画面が見出しの文言を組み立てられるよう、対応表も返す
+        assert body["attribute_labels"]["single_parent"] == "ひとり親家庭"
+
+    def test_matched_attributes_empty_when_not_requested(self, client, bq):
+        """指定していない属性は一致に含めない（勝手に「あなたはひとり親です」と言わない）。"""
+        bq.set_rows([self.match_row(is_single_parent_target=True)])
+        res = client.get("/api/benefits/match?include_skill_tree=false")
+        assert res.json()["benefits"][0]["matched_attributes"] == []
+
+    def test_attributes_still_do_not_filter(self, client, bq):
+        """**見出しに使うだけで、絞り込みには使わない。**
+
+        該当しない制度を隠すと「対象なのに出ない」を作る。分類コードと本文の
+        一致率は90%で、残り10%の取りこぼしの方が害が大きい（CLAUDE.md）。
+        """
+        bq.set_rows([self.match_row(is_single_parent_target=False)])
+        res = client.get("/api/benefits/match?is_single_parent=true&include_skill_tree=false")
+        assert res.json()["count"] == 1, "属性に該当しない制度が消えています"
+        assert res.json()["benefits"][0]["matched_attributes"] == []
+
     def test_inferred_age_is_flagged_in_reason(self, client, bq):
         """推定値で当たった場合はユーザーに断定的に見せない。"""
         bq.set_rows([self.match_row(age_source="inferred")])
