@@ -667,6 +667,45 @@ class TestSettingsAndModelUsers:
         page.goto(url)
         assert self.titles(page) == first
 
+    def test_settings_restores_the_previous_input(self, page, base_url):
+        """クエリ無しで設定画面を開き直すと、前回の入力が復元されること。
+
+        **この経路が一度も動いていなかった**（レビューで指摘）。
+        `initial === EMPTY_PROFILE` で「URL にクエリが無い」を判定していたが、
+        Server Component から Client Component へ渡る props は RSC の
+        シリアライズを経由するため、**参照比較は常に false** になる。
+        中身が同じでもサーバ側とクライアント側で別インスタンスだから。
+
+        既存のテストは「URL で渡した場合」しか見ておらず、すり抜けていた。
+        """
+        page.set_default_timeout(15_000)
+        page.goto(f"{base_url}/settings")
+        page.wait_for_selector('[data-testid="apply-profile"]')
+        page.evaluate(
+            """() => window.localStorage.setItem('kosodate.profile', JSON.stringify({
+                areaCode: '131067', children: [], isPregnant: false,
+                isSingleParent: false, hasDisability: false }))"""
+        )
+
+        page.goto(f"{base_url}/settings")  # クエリ無しで開き直す
+        page.wait_for_selector('[data-testid="apply-profile"]')
+        assert page.locator("#area").input_value() == "131067", "前回の入力が復元されていません"
+
+    def test_url_wins_over_saved_input(self, page, base_url):
+        """URL にクエリがあれば、保存された値より URL を優先すること（URL が正）。"""
+        page.set_default_timeout(15_000)
+        page.goto(f"{base_url}/settings")
+        page.wait_for_selector('[data-testid="apply-profile"]')
+        page.evaluate(
+            """() => window.localStorage.setItem('kosodate.profile', JSON.stringify({
+                areaCode: '131067', children: [], isPregnant: false,
+                isSingleParent: false, hasDisability: false }))"""
+        )
+
+        page.goto(f"{base_url}/settings?area_code=131016")
+        page.wait_for_selector('[data-testid="apply-profile"]')
+        assert page.locator("#area").input_value() == "131016", "URL より保存値が優先されています"
+
     def test_no_attributes_shows_everything(self, page, base_url):
         """属性が無ければ絞り込まない（入力を強制しない）。"""
         page.set_default_timeout(15_000)

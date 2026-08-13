@@ -24,7 +24,16 @@ import type { Area } from "@/lib/types";
  * 入力値は保存すると localStorage に入るが、**判定に使うのは URL の値**。
  * ここで組み立てた URL でトップページへ遷移し、サーバ側の確定クエリが絞り込む。
  */
-export function SettingsForm({ areas, initial }: { areas: Area[]; initial: Profile }) {
+export function SettingsForm({
+  areas,
+  initial,
+  hasParams,
+}: {
+  areas: Area[];
+  initial: Profile;
+  /** URL にクエリがあったか。**オブジェクトの参照比較で判定してはいけない**（下記） */
+  hasParams: boolean;
+}) {
   const router = useRouter();
   // localStorage はブラウザにしか無い。**このフォームはクライアント限定で描画している**ので
   // （settings-form-client.tsx）、初期値としてそのまま読める。
@@ -32,9 +41,14 @@ export function SettingsForm({ areas, initial }: { areas: Area[]; initial: Profi
   // React の「effect 内で直接 setState しない」規則にも触れる。
   //
   // URL で属性が渡っていればそちらを優先する（**URL が正**）。
-  const [profile, setProfile] = useState<Profile>(() =>
-    initial === EMPTY_PROFILE ? loadProfile() : initial,
-  );
+  //
+  // **その判定に `initial === EMPTY_PROFILE` を使ってはいけない。**
+  // Server Component から渡る props は RSC のシリアライズを経由するため、
+  // サーバ側の EMPTY_PROFILE とクライアント側が import した EMPTY_PROFILE は
+  // 中身が同じでも別インスタンスになり、参照比較は**常に false** になる。
+  // 実際にそう書いていて、localStorage からの復元が一度も動いていなかった
+  // （レビューで指摘。プリミティブの boolean なら境界をまたいでも比較できる）。
+  const [profile, setProfile] = useState<Profile>(() => (hasParams ? initial : loadProfile()));
 
   const update = (patch: Partial<Profile>) => setProfile((p) => ({ ...p, ...patch }));
   const updateChild = (index: number, patch: Partial<Child>) =>

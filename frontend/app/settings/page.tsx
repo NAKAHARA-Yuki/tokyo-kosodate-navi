@@ -1,7 +1,7 @@
 import { SettingsFormClient } from "@/components/settings-form-client";
 import { Heading, HeadingTitle } from "@/components/dads/heading";
 import { fetchBackend } from "@/lib/backend";
-import { EMPTY_PROFILE, fromSearchParams } from "@/lib/profile";
+import { fromSearchParams } from "@/lib/profile";
 import type { Area } from "@/lib/types";
 
 // force-dynamic の理由は lib/backend.ts / app/page.tsx 参照。
@@ -43,7 +43,7 @@ export default async function SettingsPage({
         入力した内容はこの端末にだけ保存され、サーバーには送られません。
         絞り込みの結果は URL に反映されるので、そのまま共有できます。
       </p>
-      <SettingsFormClient areas={areas} initial={hasParams ? initial : EMPTY_PROFILE} />
+      <SettingsFormClient areas={areas} initial={initial} hasParams={hasParams} />
     </main>
   );
 }
