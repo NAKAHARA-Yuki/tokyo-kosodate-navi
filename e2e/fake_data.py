@@ -5,6 +5,12 @@ CI では GCP 認証が使えないため、BigQuery を差し替えて実デー
 BigQuery そのものの挙動確認ではない。
 """
 
+# backend 側の障害を E2E から再現するための ID。
+# この ID を問い合わせるとスタブが例外を投げ、backend が 500 を返す。
+# frontend のエラー画面（app/error.tsx）が「内部事情を出さずに」表示されることを
+# 検証するために使う（実データには存在しない ID なので実環境の挙動には影響しない）。
+FAILING_BENEFIT_ID = "e2e-backend-failure"
+
 AREAS = [
     {"area_code": "130001", "area_name": "東京都", "count": 27},
     {"area_code": "131016", "area_name": "千代田区", "count": 135},
@@ -195,6 +201,8 @@ def rows_for(query: str, params: dict | None = None) -> list[dict]:
     params = params or {}
     if "COUNT(DISTINCT area_code)" in query:
         return DATA_SOURCE_ROWS
+    if params.get("benefit_id") == FAILING_BENEFIT_ID:
+        raise RuntimeError("E2E 用に意図的に発生させた backend の障害")
     if "stage_key" in query:
         return TIMELINE_ROWS
     if "benefit_leads_to" in query:

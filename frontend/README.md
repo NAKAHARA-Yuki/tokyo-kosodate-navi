@@ -35,6 +35,22 @@ staging は main マージ、prod は `v*.*.*` タグ push）。
 | `BACKEND_URL` | backend (FastAPI) の Cloud Run URL。ID トークンの audience にも使う |
 | `BACKEND_REQUIRES_AUTH` | `false` にすると ID トークンを付けない（ローカルで `services proxy` を使うときのみ） |
 
+## フォント
+
+日本語は **Noto Sans JP**（デジタル庁デザインシステムの指定。`@digital-go-jp/tailwind-theme-plugin`
+の `--font-sans` も先頭がこれ）。`app/layout.tsx` の `next/font/google` で読み込む。
+
+- **ブラウザから Google へはリクエストが飛ばない。** `next/font` がビルド時に取得して
+  `.next/static/media/` に置き、そこから自前で配る（[ADR 0010](../docs/adr/0010-no-runtime-cdn.md)
+  の「実行時に外部 CDN から取らない」を満たす）。ただし **ビルド時には外へ出る**ので、
+  ネットワークの無い環境ではビルドできない
+- `subsets: ["latin"]` を指定しているが、**日本語のグリフはこれで入る**。
+  `next/font` のフォントメタデータに `"japanese"` という subset 名は存在せず、
+  日本語は unicode-range で分割されたチャンクとして落ちてくる（実測: 125ファイル / 5.3MB）。
+  ブラウザは表示に必要なチャンクだけを取るので、トップページで実際に転送されるのは
+  18ファイル / 約365KB（実測）
+- Docker イメージには `.next/static` の COPY で入る（`Dockerfile` 側の追加対応は不要）
+
 ## デザインシステム（`components/dads/`）
 
 [デジタル庁デザインシステム](https://design.digital.go.jp/dads/react/)を使う。

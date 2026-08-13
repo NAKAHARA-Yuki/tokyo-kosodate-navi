@@ -13,6 +13,8 @@ async function getSubgraph(id: string): Promise<Subgraph | null> {
   const res = await fetchBackend(`/api/subgraph?benefit_id=${id}`);
   if (res.status === 404) return null;
   if (!res.ok) {
+    // 握りつぶさず投げる。app/error.tsx が受け取って利用者向けの画面を出し、
+    // このメッセージ自体はサーバのログにだけ残る（本番ビルドではクライアントに渡らない）。
     throw new Error(`backend が ${res.status} を返しました`);
   }
   return res.json();
@@ -78,21 +80,7 @@ export default async function BenefitDetail({ params }: { params: Promise<{ id: 
   // クエリ文字列にはそのまま載せること。
   const { id } = await params;
 
-  let subgraph: Subgraph | null;
-  try {
-    subgraph = await getSubgraph(id);
-  } catch (reason) {
-    const message = reason instanceof Error ? reason.message : "不明なエラー";
-    return (
-      <main className="mx-auto max-w-3xl p-6">
-        <p className="text-red-700">読み込みに失敗しました: {message}</p>
-        <p className="mt-4">
-          <Link href="/">一覧に戻る</Link>
-        </p>
-      </main>
-    );
-  }
-
+  const subgraph = await getSubgraph(id);
   if (!subgraph) notFound();
 
   const benefit = subgraph.nodes.find((n) => n.data.type === "Benefit")?.data;

@@ -9,6 +9,7 @@ import os
 import re
 
 import pytest
+from fake_data import FAILING_BENEFIT_ID
 from playwright.sync_api import expect
 
 
@@ -250,6 +251,95 @@ class TestBenefitDetail:
             "els => els.map(e => e.getAttribute('href'))"
         )
         assert len(hrefs) == len(set(hrefs)), f"同じリンクが重複しています: {hrefs}"
+
+
+class TestNotFoundPages:
+    """存在しない URL / 制度に 404 の画面を出すこと（issue #59）。
+
+    存在しない ID は実データでも同じく 404 になるので、デプロイ先に対しても実行する。
+    """
+
+    @pytest.mark.smoke
+    def test_unknown_url_returns_404_page(self, page, base_url):
+        """どのルートにも一致しない URL。ステータスも 404 であること。"""
+        res = page.goto(f"{base_url}/no-such-page")
+        assert res is not None and res.status == 404
+        expect(page.locator("main")).to_contain_text("見つかりませんでした")
+
+    def test_unknown_benefit_returns_404_page(self, page, base_url):
+        """存在しない benefit_id（backend が 404 を返すケース）。"""
+        page.goto(f"{base_url}/benefits/does-not-exist")
+        expect(page.locator("main")).to_contain_text("見つかりませんでした")
+
+    def test_404_page_links_back_to_the_list(self, page, base_url):
+        page.goto(f"{base_url}/benefits/does-not-exist")
+        page.locator("main a").first.click()
+        page.wait_for_selector("main ul li")
+
+
+class TestBackendFailurePage:
+    """backend が 500 を返したときのエラー画面（issue #59）。
+
+    以前は失敗時に `backend が 500 を返しました` がそのまま画面に出ていた。
+    利用者にとって意味が無いうえ、backend の状態を外に晒すため、出さないことを担保する。
+
+    **500 を意図的に起こせるのはスタブだけ**なので、デプロイ先に対しては実行しない。
+    `FAILING_BENEFIT_ID` を 500 に変換するのは `e2e/fake_data.py` の仕掛けで、
+    実環境では「ただの存在しない ID」＝ 404 になり、`TestNotFoundPages` と同じ画面が出る。
+    それでも `test_backend_failure_does_not_leak_internals` の方は 404 画面にも
+    "backend" の文字が無いため**偶然通ってしまい**、壊れていることに気づけない。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _stub_only(self):
+        if os.environ.get("E2E_BASE_URL"):
+            pytest.skip("500 を意図的に起こせるのはスタブだけなので、実環境では実行しない")
+
+    def test_backend_failure_shows_a_user_facing_page(self, page, base_url):
+        """backend が 500 を返したとき、利用者向けの文言と復帰導線が出ること。"""
+        page.goto(f"{base_url}/benefits/{FAILING_BENEFIT_ID}")
+        main = page.locator("main")
+        expect(main).to_contain_text("ページを表示できませんでした")
+        expect(main.get_by_role("button", name="もう一度読み込む")).to_be_visible()
+        expect(main.get_by_role("link", name="制度の一覧に戻る")).to_be_visible()
+
+    def test_backend_failure_does_not_leak_internals(self, page, base_url):
+        """内部のエラーメッセージが画面に出ないこと（この issue の本題）。
+
+        このテストが守れるのは「Server Component が握りつぶして自分で描画する」形の漏れ
+        （実際に起きていた形）。バグを再投入して落ちることを確認済み。
+        逆に app/error.tsx 側で `error.message` を出しても**このテストは通ってしまう**。
+        本番ビルドでは Next.js が Server Component の例外メッセージを匿名化するため。
+        """
+        page.goto(f"{base_url}/benefits/{FAILING_BENEFIT_ID}")
+        page.wait_for_selector("main")
+        text = page.locator("main").inner_text()
+        assert "backend" not in text.lower(), f"backend の内部事情が出ています: {text!r}"
+        assert "を返しました" not in text, f"内部のエラーメッセージが出ています: {text!r}"
+
+
+class TestJapaneseFont:
+    """日本語がデザインシステムの想定フォント（Noto Sans JP）で描画されること（issue #59）。
+
+    以前は create-next-app の雛形のまま Geist（latin のみ）を読み込み、`body` を
+    `font-family: Arial` で固定していたため、日本語は OS 依存のフォントに落ちていた。
+    Docker の standalone ビルドでフォントファイルが同梱され損ねると同じ状態に戻るため、
+    デプロイ先に対しても確認する。
+    """
+
+    @pytest.mark.smoke
+    def test_japanese_is_rendered_with_noto_sans_jp(self, page, base_url):
+        page.goto(base_url)
+        family = page.evaluate("getComputedStyle(document.body).fontFamily")
+        assert "Noto Sans JP" in family, f"Noto Sans JP が指定されていません: {family!r}"
+
+        # 指定されているだけでなく、日本語のグリフを持つフォントが実際に読み込めていること。
+        # （next/font の subsets に "japanese" は無く、latin 指定でも日本語チャンクが
+        #   入るという前提が崩れていないかの確認でもある）
+        page.evaluate("() => document.fonts.ready")
+        assert page.evaluate("() => document.fonts.check('16px \"Noto Sans JP\"', '子育て支援')"), (
+            "Noto Sans JP で日本語を描画できていません（フォントが配信されていない可能性）"
+        )
 
 
 class TestDebugPageIsMarkedAsDevOnly:
