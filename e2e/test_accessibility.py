@@ -65,7 +65,7 @@ def detail(top):
 
 
 class TestNewPagesHaveNoViolations:
-    """Next.js の画面。**AA と best-practice の両方**を必須にする。
+    """自分たちで書いた Next.js の画面。**AA と best-practice の両方**を必須にする。
 
     導入時点でどちらもゼロだったので、緩める理由が無い。
     """
@@ -77,6 +77,21 @@ class TestNewPagesHaveNoViolations:
     def test_detail_page(self, detail):
         assert_clean(detail, WCAG_AA, "詳細ページ（AA）")
         assert_clean(detail, BEST_PRACTICE, "詳細ページ（best-practice）")
+
+
+class TestNotFoundPageMeetsAA:
+    """404 は **AA だけ**を必須にする。
+
+    いま出ているのは **Next.js 組み込みの 404**（`404 This page could not be found.`）で、
+    こちらが書いた画面ではない。`<main>` を持たないため best-practice が2件出る。
+
+        [moderate] landmark-one-main: Document should have one main landmark
+        [moderate] region: All page content should be contained by landmarks
+
+    **#71 で `not-found.tsx`（`<main>` を持つ）が入れば両方とも消える**ので、
+    そのときに best-practice も必須へ引き上げること。
+    それまでは AA だけを守る（AA はいまもゼロ）。
+    """
 
     def test_not_found_page(self, page, base_url):
         page.set_default_timeout(15_000)
@@ -122,13 +137,26 @@ class TestKeyboardOnly:
         expect(top.locator("main h1")).to_be_visible()
 
     def test_focus_is_visible(self, top):
-        """フォーカスが見えること。見えないとキーボード操作は成立しない。"""
+        """フォーカスが見えること。見えないとキーボード操作は成立しない。
+
+        **`outline-width` で判定してはいけない。** `outline-style: none` にしても
+        計算値は残る（描画されないだけでプロパティの値は消えない）。実測すると
+
+            フォーカス表示あり        outlineStyle=auto  outlineWidth=1px
+            outline:none で全部消す   outlineStyle=none  outlineWidth=3px
+
+        となり、幅を条件に入れると**何をしても通るテスト**になる（レビューで指摘）。
+        いまのフォーカスリングはブラウザ既定の `outline: auto` で出ており、
+        デザイン上の理由で `outline: none` を当てるのが最も起きやすい壊し方なので、
+        そこを捕まえられる形にしておく。
+        """
         top.keyboard.press("Tab")
-        outline = top.evaluate(
+        style = top.evaluate(
             "() => { const s = getComputedStyle(document.activeElement);"
-            " return [s.outlineStyle, s.outlineWidth, s.boxShadow].join(' '); }"
+            " return {outlineStyle: s.outlineStyle, boxShadow: s.boxShadow}; }"
         )
-        assert outline != "none 0px none", f"フォーカス位置が視覚的に分かりません: {outline!r}"
+        invisible = style["outlineStyle"] == "none" and style["boxShadow"] == "none"
+        assert not invisible, f"フォーカス位置が視覚的に分かりません: {style}"
 
 
 class TestHeadingStructure:
