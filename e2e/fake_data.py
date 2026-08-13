@@ -36,6 +36,7 @@ BENEFITS = [
         "max_age_months": 47,
         "age_source": "explicit",
         "area_name": "台東区",
+        "area_code": "131067",
         "has_free_text_conditions": True,
         "is_free": True,
         "monetary_support_text": None,
@@ -51,6 +52,7 @@ BENEFITS = [
         "max_age_months": 227,
         "age_source": "explicit",
         "area_name": "台東区",
+        "area_code": "131067",
         "has_free_text_conditions": False,
         "is_free": False,
         "monetary_support_text": "第1子、第2子：月額1万5,000円",
@@ -65,6 +67,7 @@ BENEFITS = [
         "min_age_months": 0,
         "max_age_months": 36,
         "age_source": "inferred",
+        "area_code": "131067",
         "area_name": "台東区",
         "has_free_text_conditions": False,
         "is_free": True,
@@ -82,7 +85,26 @@ BENEFITS = [
         "min_age_months": None,
         "max_age_months": None,
         "age_source": "unknown",
+        "area_code": "131067",
         "area_name": "台東区",
+        "has_free_text_conditions": False,
+        "is_free": True,
+        "monetary_support_text": None,
+        "cost_text": None,
+        "electronic_submission": False,
+    },
+    {
+        # **別の自治体の制度。** これが無いと area_code の絞り込みが効いているか
+        # 分からない（全件が同じ区なら、絞っても絞らなくても結果が変わらないため）。
+        "benefit_id": "psid-chiyoda-ninshin",
+        "title": "妊婦健康診査（千代田区）",
+        "category": "妊婦健康診査",
+        "summary": "千代田区にお住まいの妊婦の方が対象です。",
+        "min_age_months": None,
+        "max_age_months": None,
+        "age_source": "unknown",
+        "area_code": "131016",
+        "area_name": "千代田区",
         "has_free_text_conditions": False,
         "is_free": True,
         "monetary_support_text": None,
@@ -229,18 +251,8 @@ MATCH_BENEFITS = [
     _match_row(BENEFITS[1], area_code=AREA_TAITO),  # 児童手当 0〜227
     _match_row(BENEFITS[2], area_code=AREA_TAITO),  # あそびひろば 0〜36（推定）
     _match_row(BENEFITS[3], area_code=AREA_TAITO),  # 子育て相談窓口（年齢不明）
-    _match_row(
-        {
-            **BENEFITS[0],
-            "benefit_id": "psid-chiyoda-1",
-            "title": "妊婦健康診査（千代田区）",
-            "area_name": "千代田区",
-            "min_age_months": None,
-            "max_age_months": None,
-        },
-        area_code=AREA_CHIYODA,
-        is_prenatal=True,
-    ),
+    # 一覧と同じ行を使う（別々に作ると同じ名前で ID が違う制度が2つできる）
+    _match_row(BENEFITS[4], area_code=AREA_CHIYODA, is_prenatal=True),
     # 属性で束ねる検証用（issue #53）。分類コードに該当する制度と、しない制度の
     # 両方が要る。片方しか無いと「該当しないものを隠していないか」を確かめられない。
     _match_row(
@@ -264,6 +276,19 @@ MATCH_BENEFITS = [
 ]
 
 
+def _in_age_range(lo, hi, age: int) -> bool:
+    """`app/queries.py` の年齢判定と同じ。**NULL は素通り**させる。
+
+    素通りが正しい。実データの 34.2% は年齢が読み取れておらず、ここで落とすと
+    「対象なのに出ない」を作る（CLAUDE.md）。スタブの方が実装より厳しいと、
+    実装が正しいのにテストが落ちる、という逆転が起きる。
+
+    検索は `min/max_age_months`、match は `effective_*` と列名が違うだけなので、
+    判定はここに1つだけ置く。
+    """
+    return (lo is None or lo <= age) and (hi is None or hi >= age)
+
+
 def _matches_ages(row: dict, ages: list[int]) -> bool:
     """`app/queries.py` の `ages_filter_sql()` と同じ判定。**NULL は素通り**させる。
 
@@ -273,7 +298,7 @@ def _matches_ages(row: dict, ages: list[int]) -> bool:
     """
     lo = row.get("effective_min_age_months")
     hi = row.get("effective_max_age_months")
-    return any((lo is None or lo <= a) and (hi is None or hi >= a) for a in ages)
+    return any(_in_age_range(lo, hi, a) for a in ages)
 
 
 def _match(query: str, params: dict) -> list[dict]:
@@ -292,6 +317,37 @@ def _match(query: str, params: dict) -> list[dict]:
         rows = [r for r in rows if _matches_ages(r, list(ages)) or (include_prenatal and r["is_prenatal"])]
     elif include_prenatal:
         rows = [r for r in rows if r["is_prenatal"]]
+
+    return rows
+
+
+def _search_benefits(params: dict) -> list[dict]:
+    """`/api/benefits` の絞り込みをスタブ側でも再現する。
+
+    **ここで params を無視して全件返してはいけない。** 以前はそうなっており、
+    `benefit_id` を見ずに詳細ページの行を返していたせいで、二重URLエンコードのバグが
+    E2E をすり抜けて dev に出た（issue #64）。同じ穴が検索側にも残っていて、
+    `area_code` や `age_months` を渡しても結果が変わらないため、
+    絞り込みのテストが「1件以上ある」ことしか担保できていなかった。
+
+    判定は backend が渡した**パラメータ**を見て行う。backend が条件を組み立て忘れれば
+    パラメータ自体が来ないので、絞り込みを検証しているテストが落ちる。
+    """
+    rows = list(BENEFITS)
+    if (q := params.get("q")) is not None:
+        # backend は LIKE 用に %...% を付けて渡す
+        needle = str(q).strip("%").lower()
+        rows = [r for r in rows if needle in r["title"].lower()]
+    if (category := params.get("category")) is not None:
+        rows = [r for r in rows if r["category"] == category]
+    if (area_code := params.get("area_code")) is not None:
+        rows = [r for r in rows if r.get("area_code") == area_code]
+    if (age_months := params.get("age_months")) is not None:
+        rows = [
+            r for r in rows if _in_age_range(r.get("min_age_months"), r.get("max_age_months"), age_months)
+        ]
+    if (limit := params.get("limit")) is not None:
+        rows = rows[:limit]
     return rows
 
 
@@ -302,6 +358,8 @@ def rows_for(query: str, params: dict | None = None) -> list[dict]:
     subgraph は **存在しない ID なら空を返す**（実データと同じく 404 になる）。
     ここで常に行を返してしまうと、URLエンコードを誤って別のIDを問い合わせていても
     E2E が気づけない。
+
+    検索（`/api/benefits`）も同様にパラメータを見て絞り込む（`_search_benefits`）。
     """
     params = params or {}
     if "COUNT(DISTINCT area_code)" in query:
@@ -326,5 +384,11 @@ def rows_for(query: str, params: dict | None = None) -> list[dict]:
     if "is_single_parent_target" in query:
         return _match(query, params)
     if "SELECT area_name" in query:
+        # 存在しない area_code なら空を返す（backend はこれを 400 に変える）。
+        # 常に行を返すと、どんな値を送っても「台東区」に解決されてしまい、
+        # 検証している側は何も担保できない。
+        requested = params.get("area_code")
+        if requested is not None and requested not in {a["area_code"] for a in AREAS}:
+            return []
         return PROFILE_ROWS
-    return BENEFITS
+    return _search_benefits(params)

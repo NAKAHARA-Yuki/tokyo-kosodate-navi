@@ -5,11 +5,13 @@
 ユニットテストをすり抜けて本番に出たため、画面操作で検証する。
 """
 
+import contextlib
 import os
 import re
 
 import pytest
 from fake_data import FAILING_BENEFIT_ID
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
 
@@ -404,15 +406,76 @@ class TestInitialRender:
 
 
 class TestAttributeFilter:
-    def test_area_filter_triggers_search(self, app_page):
-        app_page.select_option("#area-select", "131067")
-        app_page.wait_for_function("() => cy.nodes().length > 0")
-        assert app_page.locator(".result-item").count() > 0
+    """属性による絞り込みが**実際に絞れている**こと（issue #64）。
 
-    def test_age_input_accepts_value(self, app_page):
-        app_page.fill("#age-years", "3")
-        app_page.wait_for_timeout(600)  # デバウンス待ち
-        assert app_page.locator(".result-item").count() > 0
+    以前はどちらのテストも `count() > 0` しか見ておらず、スタブが `area_code` も
+    `age_months` も無視して常に全件返していたため、**絞り込みを完全に壊しても通りました。**
+    スタブがパラメータを見るようになったので、結果の中身で検証します。
+    """
+
+    def titles(self, page) -> list[str]:
+        return page.locator(".result-item .title").all_inner_texts()
+
+    def settle(self, page, predicate: str) -> list[str]:
+        """絞り込みの反映を待ってから、そのときの一覧を返す。
+
+        **待てなかったことをテストの失敗にしない。** `wait_for_function` を直接使うと
+        落ちたときのメッセージが `Timeout` だけになり、何が出ていたのかが分かりません。
+        待つのはあくまで安定化のためで、判定は呼び出し側の assert に任せます。
+        """
+        with contextlib.suppress(PlaywrightTimeoutError):
+            page.wait_for_function(
+                f"() => {{ const t = [...document.querySelectorAll('.result-item .title')]"
+                f".map(e => e.textContent); return {predicate}; }}",
+                timeout=5_000,
+            )
+        return self.titles(page)
+
+    def test_area_filter_narrows_to_that_area(self, app_page):
+        """千代田区を選んだら千代田区の制度だけになること。"""
+        app_page.select_option("#area-select", "131016")
+        titles = self.settle(app_page, "t.length > 0 && t.every(x => x.includes('千代田区'))")
+        assert titles, "千代田区の制度が1件も出ていません"
+        assert all("千代田区" in t for t in titles), f"他の区の制度が混ざっています: {titles}"
+
+    def test_area_filter_excludes_other_areas(self, app_page):
+        """台東区を選んだら千代田区の制度が消えること。
+
+        「選んだ区のものが出る」だけでは、絞り込まず全件返していても通ります。
+        **出てはいけないものが消えている**ことを見ます。
+        """
+        before = self.titles(app_page)
+        assert any("千代田区" in t for t in before), (
+            f"前提が崩れています。絞り込み前に千代田区の制度が出ているはず: {before}"
+        )
+        app_page.select_option("#area-select", "131067")
+        titles = self.settle(app_page, "t.length > 0 && !t.some(x => x.includes('千代田区'))")
+        assert titles, "台東区の制度が1件も出ていません"
+        assert not any("千代田区" in t for t in titles), f"千代田区が残っています: {titles}"
+
+    def test_age_filter_drops_out_of_range_benefits(self, app_page):
+        """5歳では、対象年齢を外れる制度が消えること。
+
+        スタブは `app/queries.py` の `age_filter_sql()` と同じ判定をします
+        （**年齢が NULL の制度は素通り**。実データの 34.2% がこれで、
+        ここで落とすと「対象なのに出ない」を作るため）。
+
+        5歳（60ヶ月）だと:
+          3歳児健康診査（36〜47ヶ月）  → 範囲外なので消える
+          あそびひろば（0〜36ヶ月）    → 範囲外なので消える
+          児童手当（0〜227ヶ月）       → 残る
+          子育て相談窓口（年齢NULL）   → 残る
+        """
+        before = self.titles(app_page)
+        assert any("3歳児健康診査" in t for t in before), f"前提が崩れています: {before}"
+
+        app_page.fill("#age-years", "5")
+        titles = self.settle(app_page, "t.length > 0 && !t.some(x => x.includes('3歳児健康診査'))")
+        assert any("児童手当" in t for t in titles), f"範囲内の制度が消えています: {titles}"
+        assert any("子育て相談窓口" in t for t in titles), (
+            f"年齢が NULL の制度まで落ちています（「対象なのに出ない」を作ります）: {titles}"
+        )
+        assert not any("あそびひろば" in t for t in titles), f"範囲外の制度が残っています: {titles}"
 
     def test_inferred_age_is_labeled_as_estimate(self, app_page):
         """推定値は「推定」と明示し、断定的に見せない。"""
