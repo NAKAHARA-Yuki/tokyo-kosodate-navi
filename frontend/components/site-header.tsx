@@ -12,9 +12,13 @@ import Link from "next/link";
 export function SiteHeader() {
   return (
     <header className="border-b border-solid-gray-300 bg-white">
-      <div className="mx-auto max-w-3xl p-4">
+      <div className="mx-auto flex max-w-3xl items-center justify-between gap-4 p-4">
         <Link href="/" className="text-std-18B-160 text-solid-gray-900 no-underline">
           子育て支援制度ナレッジグラフ
+        </Link>
+        {/* 属性の入力はここからのみ。トップに入力欄を置かない（issue #53） */}
+        <Link href="/settings" className="text-std-16N-170 text-blue-900">
+          条件を設定
         </Link>
       </div>
     </header>

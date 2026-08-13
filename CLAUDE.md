@@ -47,6 +47,8 @@ app/            Cloud Run で動く FastAPI。**API専用でHTMLは返さない*
   explanation_cache.py  やさしい解説の生成結果を BigQuery に保存して使い回す（docs/adr/0015）
 frontend/       Cloud Run で動く Next.js（別サービス）。画面はすべてこちら
   lib/backend.ts  backend を ID トークン付きで呼ぶ（サーバ側からのみ。docs/adr/0013）
+  lib/profile.ts  利用者の属性。**URL のクエリを正とし、localStorage は補助**（issue #53）
+  app/settings/   属性の入力画面。トップには入力欄を置かない
   app/api/[...path]/route.ts  backend への catch-all プロキシ
   public/debug.html  開発用画面（素のJS + cytoscape.js）。/debug で配信。撤去しない（docs/adr/0014）
 tests/          ユニット・API結合テスト（BigQuery はモック）

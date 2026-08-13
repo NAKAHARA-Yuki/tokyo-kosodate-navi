@@ -42,7 +42,11 @@ class FakeBigQueryClient:
         params = {}
         if job_config is not None:
             for p in getattr(job_config, "query_parameters", None) or []:
-                params[p.name] = p.value
+                # ArrayQueryParameter は `value` ではなく `values` を持つ。
+                # 素の `p.value` だと AttributeError で 500 になる。
+                # tests/conftest.py の last_params() では #84 で直したが、
+                # こちら（E2E のスタブ）は match を通す経路が無く露見していなかった。
+                params[p.name] = getattr(p, "value", None) if hasattr(p, "value") else p.values
         if "benefit_explanations" in query:
             hit = self._explanations.get(params.get("cache_key"))
             return _FakeJob([hit] if hit else [])

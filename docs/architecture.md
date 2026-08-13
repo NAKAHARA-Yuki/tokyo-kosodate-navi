@@ -70,6 +70,8 @@ Server Component）が専用サービスアカウント（`kosodate-frontend@...
 | `main.py` | アプリ生成・ルーター登録・`/api/healthz`（HTMLは返さない） |
 | `dependencies.py` | BigQuery / Gemini クライアントの生成 |
 | `queries.py` | 複数ルーターで共通の年齢フィルタSQL |
+| `frontend/lib/profile.ts` | 利用者の属性。URL のクエリを正とし、localStorage は補助（#53 / #35） |
+| `frontend/app/settings/page.tsx` | 属性の入力画面。モデルユーザーの切り替えもここ |
 | `explanation_cache.py` | やさしい解説の生成結果を BigQuery に保存して再利用する（ADR 0015） |
 | `routers/benefits.py` | `/api/categories`, `/api/areas`, `/api/benefits`, `/api/subgraph` |
 | `routers/match.py` | `/api/user/profile`, `/api/benefits/match`（Phase2）。プロフィールは**子ども複数**に対応し、生年月日を正とする（#75） |
