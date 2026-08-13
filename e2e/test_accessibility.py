@@ -78,26 +78,21 @@ class TestNewPagesHaveNoViolations:
         assert_clean(detail, WCAG_AA, "詳細ページ（AA）")
         assert_clean(detail, BEST_PRACTICE, "詳細ページ（best-practice）")
 
-
-class TestNotFoundPageMeetsAA:
-    """404 は **AA だけ**を必須にする。
-
-    いま出ているのは **Next.js 組み込みの 404**（`404 This page could not be found.`）で、
-    こちらが書いた画面ではない。`<main>` を持たないため best-practice が2件出る。
-
-        [moderate] landmark-one-main: Document should have one main landmark
-        [moderate] region: All page content should be contained by landmarks
-
-    **#71 で `not-found.tsx`（`<main>` を持つ）が入れば両方とも消える**ので、
-    そのときに best-practice も必須へ引き上げること。
-    それまでは AA だけを守る（AA はいまもゼロ）。
-    """
-
     def test_not_found_page(self, page, base_url):
+        """404 も同じ基準で守る。
+
+        このPRを出した時点では **Next.js 組み込みの 404**（`404 This page could not be
+        found.`）が出ており、`<main>` を持たないため best-practice が2件出ていた。
+        そのため AA だけを見る形にしていた（レビューで実装と記載の食い違いを指摘された）。
+
+        **#71 で `not-found.tsx` が入って両方とも消えたので、予告どおり引き上げた。**
+        `<main>` 1つ・`<h1>` 1つを持つ画面になっている。
+        """
         page.set_default_timeout(15_000)
         page.goto(f"{base_url}/no-such-page")
-        page.wait_for_selector("body")
+        page.wait_for_selector("main")
         assert_clean(page, WCAG_AA, "404ページ（AA）")
+        assert_clean(page, BEST_PRACTICE, "404ページ（best-practice）")
 
 
 class TestDebugPageMeetsAA:
