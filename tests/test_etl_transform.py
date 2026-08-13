@@ -12,7 +12,7 @@ from etl_documents import (
     split_belongings,
     strip_decorations,
 )
-from etl_graph import build_benefit_edges
+from etl_graph import build_benefit_edges, transform
 from etl_normalize import extract_links, normalize_date, normalize_time, normalize_zip
 from etl_statuses import _clean_codes, compute_age_bounds
 
@@ -306,6 +306,53 @@ class TestRejectsNonDocuments:
     def test_punctuation_is_checked_before_stripping(self):
         """句読点も外す前に見る。strip_decorations が末尾の読点を落とすため。"""
         assert looks_like_document("入園申込みに必要な書類一式については、子ども育成課、") is False
+
+
+class TestDocumentJudgementInThePipeline:
+    """**ETL を通した結果**で判定を確かめる（issue #112 / #120）。
+
+    `looks_like_document()` を直接呼ぶテストだけでは足りない。実際の ETL は
+    `canonical_document_name()` を経由するため、**関数単体では正しいのに
+    実際の経路では効かない**ということが起きる。
+
+    実際に起きた: `looks_like_document(canonical_doc)` を渡していたため、
+    `canonical_document_name` の中の `strip_decorations` が飾りと末尾の読点を
+    先に外してしまい、「長さ・句読点は元の文字列で見る」が無効になっていた
+    （レビューで指摘されるまで気づけなかった）。
+    """
+
+    def build(self, doc_text: str):
+        result = transform(
+            [
+                {
+                    "basicInformation": {"psid": "psid-1", "canonicalName": "テスト制度"},
+                    "必要書類": doc_text,
+                }
+            ]
+        )
+        return result["documents"]
+
+    @pytest.mark.parametrize(
+        "doc_text",
+        [
+            # 飾りを外すと40字以内に収まるが、生では超える
+            "ダウンロードは江東区ベビーシッター利用支援事業補助金交付申請書兼口座振替依頼書（PDF：450KB）",
+            # strip_decorations が末尾の読点を落とすので、外した後だと文に見えない
+            "入園申込みに必要な書類一式については、子ども育成課、",
+        ],
+    )
+    def test_rejected_through_the_real_path(self, doc_text):
+        docs = self.build(doc_text)
+        assert len(docs) == 1
+        assert bool(docs.iloc[0]["is_probable_document"]) is False, (
+            f"ETL 経路では書類として通ってしまっている: {docs.iloc[0]['doc_name']!r}"
+        )
+
+    def test_real_documents_survive_the_real_path(self):
+        """落としてはいけない側も ETL 経路で確認する。"""
+        docs = self.build("母子健康手帳\n・委任状（PDF：30KB）")
+        names = list(docs["doc_name"])
+        assert all(bool(x) for x in docs["is_probable_document"]), f"書類を落としている: {names}"
 
 
 class TestStripDecorations:
