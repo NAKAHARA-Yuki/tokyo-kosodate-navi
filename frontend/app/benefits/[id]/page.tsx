@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { fetchBackend } from "@/lib/backend";
 import type { BenefitLink, Subgraph, SubgraphNode } from "@/lib/types";
 import { AgeChip } from "@/components/age-chip";
-import { Heading } from "@/components/dads/heading";
+import { Heading, HeadingTitle } from "@/components/dads/heading";
 import { ChipLabel } from "@/components/dads/chip-label";
 import { Link } from "@/components/dads/link";
 
@@ -37,7 +37,7 @@ function LinkList({ title, links }: { title: string; links: BenefitLink[] }) {
   return (
     <section className="mt-6" data-testid="link-list">
       <Heading size="18" hasChip className="mb-2">
-        {title}
+        <HeadingTitle level="h2">{title}</HeadingTitle>
       </Heading>
       <ul className="list-disc pl-6">
         {links.map((l) => (
@@ -59,7 +59,7 @@ function TextSection({ title, rows }: { title: string; rows: [string, string | n
   return (
     <section className="mt-6">
       <Heading size="18" hasChip className="mb-2">
-        {title}
+        <HeadingTitle level="h2">{title}</HeadingTitle>
       </Heading>
       <dl>
         {present.map(([label, value]) => (
@@ -114,7 +114,7 @@ export default async function BenefitDetail({ params }: { params: Promise<{ id: 
       </p>
 
       <Heading size="28" rule="4" className="mb-4">
-        {benefit.label}
+        <HeadingTitle level="h1">{benefit.label}</HeadingTitle>
       </Heading>
 
       <div className="mb-4 flex flex-wrap gap-2">

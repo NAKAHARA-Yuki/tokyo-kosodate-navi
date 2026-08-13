@@ -1,7 +1,7 @@
 import { AgeChip } from "@/components/age-chip";
 import { fetchBackend } from "@/lib/backend";
 import type { Benefit } from "@/lib/types";
-import { Heading } from "@/components/dads/heading";
+import { Heading, HeadingTitle } from "@/components/dads/heading";
 import { ChipLabel } from "@/components/dads/chip-label";
 import { Link } from "@/components/dads/link";
 
@@ -29,7 +29,7 @@ export default async function Home() {
   return (
     <main className="mx-auto max-w-3xl p-6">
       <Heading size="28" rule="4" className="mb-6">
-        今受けられる子育て支援制度
+        <HeadingTitle level="h1">今受けられる子育て支援制度</HeadingTitle>
       </Heading>
 
       {benefits.length === 0 ? (
