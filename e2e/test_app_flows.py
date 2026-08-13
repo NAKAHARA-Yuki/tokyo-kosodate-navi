@@ -706,6 +706,46 @@ class TestSettingsAndModelUsers:
         page.wait_for_selector('[data-testid="apply-profile"]')
         assert page.locator("#area").input_value() == "131016", "URL より保存値が優先されています"
 
+    def test_groups_by_attribute(self, page, base_url):
+        """自分の属性に該当する制度が、見出しでまとまること（issue #53）。
+
+        **絞り込みではなく見出し。** 分類コードと本文の一致率は90%で、
+        該当しない制度を隠すと「対象なのに出ない」を作る（CLAUDE.md）。
+        """
+        page.set_default_timeout(15_000)
+        page.goto(f"{base_url}/?area_code=131067&child_age_months=40&is_single_parent=true")
+        page.wait_for_selector("main ul li")
+        headings = page.locator("main h2").all_inner_texts()
+        assert any("ひとり親家庭" in h for h in headings), f"属性の見出しが出ていません: {headings}"
+        assert any("そのほか" in h for h in headings), f"残りの束が出ていません: {headings}"
+
+    def test_attribute_grouping_does_not_hide_anything(self, page, base_url):
+        """見出しを付けても件数が減らないこと。
+
+        **束ねるのであって、絞り込むのではない。** 属性を足したときに
+        該当しない制度が消えていたら、それは「対象なのに出ない」を作っている。
+        """
+        page.set_default_timeout(15_000)
+        base = f"{base_url}/?area_code=131067&child_age_months=40"
+        # マッチ理由も <ul><li> で描画されるので、カードだけを数える
+        page.goto(base)
+        page.wait_for_selector('[data-testid="benefit-card"]')
+        without = page.locator('[data-testid="benefit-card"]').count()
+
+        page.goto(f"{base}&is_single_parent=true")
+        page.wait_for_selector('[data-testid="benefit-card"]')
+        assert page.locator('[data-testid="benefit-card"]').count() == without, (
+            "属性を指定したら件数が減りました"
+        )
+
+    def test_attribute_not_declared_has_no_heading(self, page, base_url):
+        """指定していない属性の見出しは出さない（勝手に決めつけない）。"""
+        page.set_default_timeout(15_000)
+        page.goto(f"{base_url}/?area_code=131067&child_age_months=40")
+        page.wait_for_selector("main ul li")
+        headings = page.locator("main h2").all_inner_texts()
+        assert not any("ひとり親家庭" in h for h in headings), f"指定していない見出しが出ています: {headings}"
+
     def test_no_attributes_shows_everything(self, page, base_url):
         """属性が無ければ絞り込まない（入力を強制しない）。"""
         page.set_default_timeout(15_000)

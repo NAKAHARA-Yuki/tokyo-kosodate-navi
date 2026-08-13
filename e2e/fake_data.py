@@ -241,6 +241,26 @@ MATCH_BENEFITS = [
         area_code=AREA_CHIYODA,
         is_prenatal=True,
     ),
+    # 属性で束ねる検証用（issue #53）。分類コードに該当する制度と、しない制度の
+    # 両方が要る。片方しか無いと「該当しないものを隠していないか」を確かめられない。
+    _match_row(
+        {
+            **BENEFITS[1],
+            "benefit_id": "psid-hitorioya",
+            "title": "ひとり親家庭等医療費助成",
+        },
+        area_code=AREA_TAITO,
+        single_parent=True,
+    ),
+    _match_row(
+        {
+            **BENEFITS[1],
+            "benefit_id": "psid-shougai",
+            "title": "障害児福祉手当",
+        },
+        area_code=AREA_TAITO,
+        disability=True,
+    ),
 ]
 
 

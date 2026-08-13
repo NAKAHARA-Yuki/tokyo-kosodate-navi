@@ -26,6 +26,18 @@ router = APIRouter()
 TARGET_CODE_SINGLE_PARENT = "088"
 TARGET_CODE_DISABILITY = "090"
 
+# 利用者の属性と、それに対応する分類コードの表示名。
+# **画面で束ねるために構造として返す**（issue #53 の続き）。理由文だけだと
+# 文字列を突き合わせることになり、表現を変えた瞬間に画面が壊れる。
+#
+# 「分類されている」という言い方を崩さないこと。コードが何を指すかの対応づけは
+# こちらの統計的推定で、本文との一致率は90%（docs/data-model.md）。断定はできない。
+ATTRIBUTE_LABELS = {
+    "single_parent": "ひとり親家庭",
+    "disability": "障がいのあるお子さん",
+    "prenatal": "妊娠中の方",
+}
+
 
 def months_between(birth: date, today: date | None = None) -> int:
     """生年月日から満月齢を求める。誕生日が来ていない月は繰り上げない。"""
@@ -195,14 +207,21 @@ def match_benefits(
             suffix = "（対象年齢は本文からの推定）" if r["age_source"] == "inferred" else ""
             who = "・".join(f"月齢{a}" for a in matched)
             reasons.append(f"お子さん（{who}）が対象範囲{span}に該当{suffix}")
+        # 指定された属性のうち、この制度が該当するもの。**絞り込みには使わない。**
+        # 該当しない制度を隠すと「対象なのに出ない」を作る（分類コードと本文の
+        # 一致率は90%で、残り10%を取りこぼす方が害が大きい）。画面では見出しとして使う。
+        matched_attributes = []
         if is_pregnant and r["is_prenatal"]:
+            matched_attributes.append("prenatal")
             reasons.append("妊娠中の方が対象")
         # 分類コードは元データの値だが、コードが何を指すかの対応づけはこちらの推定
         # （公式マスタが非公開）。断定を避けた言い回しにする。
         if is_single_parent and r["is_single_parent_target"]:
-            reasons.append("ひとり親家庭向けに分類されている制度")
+            matched_attributes.append("single_parent")
+            reasons.append(f"{ATTRIBUTE_LABELS['single_parent']}向けに分類されている制度")
         if has_disability and r["is_disability_target"]:
-            reasons.append("障がいのあるお子さん向けに分類されている制度")
+            matched_attributes.append("disability")
+            reasons.append(f"{ATTRIBUTE_LABELS['disability']}向けに分類されている制度")
 
         results.append(
             {
@@ -222,10 +241,17 @@ def match_benefits(
                 "conditions_text": (r["conditions_text"] or "")[:200] or None,
                 "official_url": r["official_url"],
                 "match_reasons": reasons,
+                "matched_attributes": matched_attributes,
             }
         )
 
-    payload = {"count": len(results), "benefits": results}
+    payload = {
+        "count": len(results),
+        "benefits": results,
+        # 画面が見出しを組み立てるための対応表。文字列を画面側に持たせると
+        # 表現を変えたときに両方直す必要が出るので、backend から返す。
+        "attribute_labels": ATTRIBUTE_LABELS,
+    }
 
     if include_skill_tree and results:
         payload["next_steps"] = _fetch_next_steps([r["benefit_id"] for r in results[:30]])
