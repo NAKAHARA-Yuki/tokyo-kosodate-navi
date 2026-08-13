@@ -26,7 +26,35 @@ def fail(msg: str) -> None:
     sys.exit(1)
 
 
+# 実際に dev を読んでみて確かめる。設定ファイルを置くだけでは権限が付いているか分からない。
+# なりすましのトークン取得はスコープ指定が必須（無指定だと 400 になる）。
+PROBE = f"""
+from google.cloud import bigquery
+c = bigquery.Client(project="{PROJECT}", location="asia-northeast1")
+list(c.query("SELECT COUNT(*) FROM `gov_knowledge_db_dev.benefits`").result())
+print("ok")
+"""
+
+
+def probe_adc():
+    """OUT の設定で実際に dev を読めるか試す。"""
+    return subprocess.run(
+        [sys.executable, "-c", PROBE],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "GOOGLE_APPLICATION_CREDENTIALS": OUT},
+    )
+
+
 if not os.path.exists(SOURCE):
+    # 起点の ADC が無くても、**生成済みの設定が有効なら作り直す必要は無い。**
+    # claude-dev-adc.json は refresh token を内包していて起点ファイルを参照しないため、
+    # 起点を消しても（あるいは書けない場所にあっても）そのまま使い続けられる。
+    # ここで一律に落としていたため、動く認証があるのに `make auth` が通らなかった。
+    if os.path.exists(OUT) and probe_adc().returncode == 0:
+        print(f"✅ {OUT} は既に有効です（作り直しはしていません）")
+        print(f"   make 経由の GCP アクセスは {SA} として動きます。")
+        sys.exit(0)
     fail("gcloud の認証がありません。先に実行してください:\n   gcloud auth application-default login")
 
 with open(SOURCE) as f:
@@ -49,21 +77,7 @@ with open(OUT, "w") as f:
     json.dump(config, f, indent=2)
 os.chmod(OUT, 0o600)
 
-# 実際に dev を読んでみて確かめる。設定ファイルを置くだけでは権限が付いているか分からない。
-# なりすましのトークン取得はスコープ指定が必須（無指定だと 400 になる）。
-PROBE = f"""
-from google.cloud import bigquery
-c = bigquery.Client(project="{PROJECT}", location="asia-northeast1")
-list(c.query("SELECT COUNT(*) FROM `gov_knowledge_db_dev.benefits`").result())
-print("ok")
-"""
-
-probe = subprocess.run(
-    [sys.executable, "-c", PROBE],
-    capture_output=True,
-    text=True,
-    env={**os.environ, "GOOGLE_APPLICATION_CREDENTIALS": OUT},
-)
+probe = probe_adc()
 
 # make auth は make setup より前に実行される手順なので、依存がまだ入っていないことがある。
 # その場合は権限の問題ではないので、設定は残したうえで確認だけ諦める。
