@@ -96,6 +96,30 @@ class TestPreschoolBeatsSchoolAge:
         assert rule == "stage_preschool", f"{text!r} が就学前と判定されていない"
         assert hi == months(5, 11)
 
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "区内在住の未就学児とその保護者",
+            "未就学のお子さんと保護者",
+            "翌年度小学校へ入学する未就学児の保護者",
+        ],
+    )
+    def test_not_yet_enrolled_is_also_preschool(self, text):
+        """**「未就学」も就学前**（issue #117）。
+
+        このパターンが無いために、「未就学児」と書いてあるのに
+        「小学校」を含む文と同じ扱い（72〜143か月）になっていた（dev の inferred 37件のうち 7件）。
+        #107 とまったく同じ型の取りこぼし。
+        """
+        lo, hi, rule = extract_age_range(text)
+        assert rule == "stage_preschool", f"{text!r} が就学前と判定されていない"
+        assert hi == months(5, 11)
+
+    def test_compulsory_education_is_not_preschool(self):
+        """「義務教育就学期」は '就学' を含むが**就学後**。就学前より先に判定する。"""
+        _lo, _hi, rule = extract_age_range("義務教育就学期にある児童")
+        assert rule == "stage_compulsory_education"
+
     def test_the_real_sentence_from_the_registry(self):
         """実データの原文そのもの。#107 で見つけた 62件はこの形。"""
         lo, hi, rule = extract_age_range(
@@ -171,6 +195,141 @@ class TestChildAllowance:
         assert rule == "stage_until18fy"
         assert lo == 0
         assert hi == 227
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "18歳に到達した年度末までの児童を養育している父または母",
+            "18歳に到達した年度の末日以前の児童",
+            "18歳に達した年度末までの児童",
+            "18歳到達の年度末までの児童を養育している方",
+            "18歳に達する年度末まで",
+            "18歳に達した日の属する年度の末日以前",
+        ],
+    )
+    def test_fiscal_year_end_variants(self, text):
+        """同じことを「年度末」と書く自治体がある（issue #117）。
+
+        **この表記を拾えず、児童扶養手当・児童育成手当・ひとり親家庭等医療費助成が
+        対象年齢を一つも持てていなかった。** dev で 12件。
+        """
+        lo, hi, rule = extract_age_range(text)
+        assert rule == "stage_until_fiscal_year_end"
+        assert (lo, hi) == (0, months(18, 11))
+
+    def test_fiscal_year_end_beats_disability_exception(self):
+        """「20歳未満」は障害がある場合の例外。**本則の18歳を採る。**
+
+        例外の方を採ると 0〜239か月になり、対象でない19歳が対象として出る
+        （dev で 32件がこの状態だった）。
+        """
+        lo, hi, rule = extract_age_range(
+            "18歳に達する年度末まで（政令で定める程度の障害がある場合は20歳未満）の児童"
+        )
+        assert rule == "stage_until_fiscal_year_end"
+        assert (lo, hi) == (0, months(18, 11))
+
+
+class TestCompulsoryEducation:
+    """「義務教育就学期」は就学**後**（小1〜中3）。'就学' を含むので就学前より先に見る。"""
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "義務教育就学期（6歳に達する日の翌日以後の最初の4月1日から15歳に達する日以後の最初の3月31日まで）の児童",
+            "市内に住所のある義務教育就学期の児童を養育している方",
+        ],
+    )
+    def test_compulsory_education(self, text):
+        lo, hi, rule = extract_age_range(text)
+        assert rule == "stage_compulsory_education"
+        assert (lo, hi) == (months(6), months(15, 11))
+
+
+class TestAgeRangesAttachedToChild:
+    """「3～4か月児」「0～2歳児クラス」のように、レンジが子どもを指す語に直接付く形。"""
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("3～4か月児健康診査", (3, 4)),
+            ("6から7か月児健康診査", (6, 7)),
+            ("3・4か月児健診", (3, 4)),
+            ("おおむね4～6か月のお子さんと保護者", (4, 6)),
+            ("生後6～8か月頃の児の保護者", (6, 8)),
+        ],
+    )
+    def test_month_ranges(self, text, expected):
+        lo, hi, rule = extract_age_range(text)
+        assert rule == "range_months_child"
+        assert (lo, hi) == expected
+
+    def test_single_month_form_still_works(self):
+        """レンジでない「4か月児」は従来どおり 4〜6か月。"""
+        lo, hi, rule = extract_age_range("4か月児健診")
+        assert rule == "child_age_months"
+        assert (lo, hi) == (4, 6)
+
+    def test_month_without_child_noun_is_not_taken(self):
+        """**子どもを指す語が無いものは拾わない。**
+
+        「妊娠8か月」を子の月齢として拾わないための制約。dev の unknown 2,672件のうち
+        17件が「妊娠Nか月」を含んでおり、拾うと妊娠中の方に 8か月児向けの制度が出る。
+        """
+        assert extract_age_range("＜妊娠8か月ころ＞妊娠8か月を迎える妊婦さん") is None
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("3～5歳児クラス", (months(3), months(5, 11))),
+            ("0～2歳児クラスの住民税非課税世帯", (0, months(2, 11))),
+            ("０～５歳児の保護者", (0, months(5, 11))),
+        ],
+    )
+    def test_year_ranges(self, text, expected):
+        lo, hi, rule = extract_age_range(text)
+        assert rule == "range_years_child"
+        assert (lo, hi) == expected
+
+    def test_multiple_ranges_are_unioned(self):
+        """**複数のクラスが並ぶときは全部の和を取る。**
+
+        最初の1つだけを採ると 3〜5歳（36〜71か月）になり、同じ制度の対象である
+        0〜2歳児が漏れる。実データでは幼保無償化がこの書き方（dev で 37件）。
+        """
+        lo, hi, rule = extract_age_range("3～5歳児クラス及び住民税非課税世帯の0～2歳児クラス")
+        assert rule == "range_years_child"
+        assert (lo, hi) == (0, months(5, 11))
+
+    def test_year_range_without_class_or_child_is_not_taken(self):
+        """「0～18歳までの児童の保護者」は従来どおり単一境界で読む（挙動を変えない）。"""
+        _lo, _hi, rule = extract_age_range("0～18歳までの児童の保護者")
+        assert rule == "upper_years"
+
+
+class TestDaysAfterBirth:
+    """「生後N日」。月齢では表せないが、0か月として持てば判定に使える。"""
+
+    def test_day_range(self):
+        lo, hi, rule = extract_age_range("生後5日から7日の赤ちゃん")
+        assert rule == "range_days"
+        assert (lo, hi) == (0, 0)
+
+    def test_upper_days(self):
+        lo, hi, rule = extract_age_range("区内在住で、生後28日未満の赤ちゃんのいる家庭")
+        assert rule == "upper_days"
+        assert (lo, hi) == (0, 0)
+
+    def test_newborn_wording_wins_over_days(self):
+        """**「新生児」と書いてあれば段階語を優先する。**
+
+        「原則として生後28日以内の新生児です。ただし、里帰り出産などで訪問を
+        受けられなかった場合には、生後4か月になる前日まで」のように、
+        日数は原則で例外はもっと広い。日数に寄せると 1か月の子に新生児訪問が出なくなる。
+        """
+        lo, hi, rule = extract_age_range("原則として生後28日以内の新生児です。")
+        assert rule == "stage_newborn"
+        assert (lo, hi) == (0, 1)
 
 
 class TestNoMatch:
