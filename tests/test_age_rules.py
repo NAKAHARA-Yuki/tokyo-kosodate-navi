@@ -72,6 +72,39 @@ class TestPreschoolBeatsSchoolAge:
         assert lo == months(3)
         assert hi == months(5, 11)
 
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "小学校に入学するまで",
+            "小学校入学するまで",
+            "小学校入学まで",
+            "就学するまで",
+            "小学校就学まで",
+        ],
+    )
+    def test_until_entering_school_is_also_preschool(self, text):
+        """**「〜まで」の形も就学前**（issue #107）。
+
+        パターンが「前」で終わる形しか見ておらず、実データにある
+        「小学校に入学するまで」を取りこぼして学齢（72〜143ヶ月）と誤判定していた。
+
+            母子健康手帳は、妊娠からお子さんが小学校に入学するまでの、母と子の健康の記録です。
+
+        この一文が summary に入っている**妊娠期の制度62件**に 6歳〜11歳11か月 が付いていた。
+        """
+        lo, hi, rule = extract_age_range(text)
+        assert rule == "stage_preschool", f"{text!r} が就学前と判定されていない"
+        assert hi == months(5, 11)
+
+    def test_the_real_sentence_from_the_registry(self):
+        """実データの原文そのもの。#107 で見つけた 62件はこの形。"""
+        lo, hi, rule = extract_age_range(
+            "母子健康手帳を交付します。母子健康手帳は、妊娠からお子さんが"
+            "小学校に入学するまでの、母と子の健康の記録です。"
+        )
+        assert rule == "stage_preschool"
+        assert (lo, hi) == (0, months(5, 11))
+
 
 class TestSchoolStages:
     @pytest.mark.parametrize(
