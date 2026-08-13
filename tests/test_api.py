@@ -366,8 +366,10 @@ def subgraph_row(**overrides):
             {"title": "壊れたリンク", "uri": None},
         ],
         "area_name": "台東区",
+        # クエリ側で effective_* に別名を付けている。素の min/max ではない（issue #61）
         "min_age_months": 36,
         "max_age_months": 47,
+        "age_source": "explicit",
         "cost_text": None,
         "cost_conditions_text": None,
         "monetary_support_text": None,
@@ -447,6 +449,27 @@ class TestSubgraph:
         body = client.get("/api/subgraph?benefit_id=psid-1").json()
         doc = next(n["data"] for n in body["nodes"] if n["data"]["type"] == "Document")
         assert doc["doc_url"] == "https://example.com/boshi.pdf"
+
+    def test_uses_effective_age_columns(self, client, bq):
+        """**素の min/max_age_months を返さないこと**（issue #61）。
+
+        素の列は6割超が NULL で、そのまま詳細ページに出すと
+        「対象年齢の記載なし」ばかりになる。一覧（search_benefits）は最初から
+        effective_* を使っており、詳細だけがずれていた。
+        """
+        bq.set_rows([subgraph_row()])
+        client.get("/api/subgraph?benefit_id=psid-1")
+        query = bq.last_query
+        assert "b.effective_min_age_months AS min_age_months" in query
+        assert "b.effective_max_age_months AS max_age_months" in query
+        assert "b.min_age_months AS min_age_months" not in query
+
+    def test_returns_age_source(self, client, bq):
+        """推定値を断定的に見せないために、どこから来た値かも返す。"""
+        bq.set_rows([subgraph_row(age_source="inferred")])
+        body = client.get("/api/subgraph?benefit_id=psid-1").json()
+        benefit = next(n["data"] for n in body["nodes"] if n["data"]["type"] == "Benefit")
+        assert benefit["age_source"] == "inferred"
 
 
 class TestTimeline:

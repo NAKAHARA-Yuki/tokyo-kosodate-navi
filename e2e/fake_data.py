@@ -66,6 +66,23 @@ BENEFITS = [
         "cost_text": None,
         "electronic_submission": False,
     },
+    {
+        # 年齢の条件が読み取れなかった制度。実データの 34.2%（2,672件）がこれで、
+        # 範囲が NULL のため年齢で絞っても素通りする（issue #61）。
+        "benefit_id": "psid-soudan",
+        "title": "子育て相談窓口",
+        "category": "相談",
+        "summary": "子育ての悩みについて相談できます。",
+        "min_age_months": None,
+        "max_age_months": None,
+        "age_source": "unknown",
+        "area_name": "台東区",
+        "has_free_text_conditions": False,
+        "is_free": True,
+        "monetary_support_text": None,
+        "cost_text": None,
+        "electronic_submission": False,
+    },
 ]
 
 # /api/subgraph は「制度1件 × 条件/書類」の直積で行が返る形
@@ -90,6 +107,7 @@ SUBGRAPH_ROWS = [
         "area_name": "台東区",
         "min_age_months": 36,
         "max_age_months": 47,
+        "age_source": "explicit",
         "cost_text": None,
         "cost_conditions_text": None,
         "monetary_support_text": None,
