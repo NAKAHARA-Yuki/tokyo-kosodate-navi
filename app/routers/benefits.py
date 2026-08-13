@@ -138,7 +138,14 @@ def get_subgraph(benefit_id: str = Query(..., description="中心にする制度
           -- 本文に埋め込まれていたリンクを ETL が分離したもの。申請書式への導線になる
           b.related_links AS related_links, b.form_links AS form_links,
           b.embedded_links AS embedded_links,
-          b.area_name AS area_name, b.min_age_months AS min_age_months, b.max_age_months AS max_age_months,
+          b.area_name AS area_name,
+          -- **素の min/max_age_months を返してはいけない。** 6割超が NULL で、
+          -- 詳細ページに出すと「対象年齢の記載なし」ばかりになる（CLAUDE.md / issue #61）。
+          -- 一覧（search_benefits）は最初から effective_* を返しており、詳細だけがずれていた。
+          b.effective_min_age_months AS min_age_months,
+          b.effective_max_age_months AS max_age_months,
+          -- 推定値を断定的に見せないために、どこから来た値かも返す
+          b.age_source AS age_source,
           b.cost_text AS cost_text, b.cost_conditions_text AS cost_conditions_text,
           b.monetary_support_text AS monetary_support_text, b.materially_support_text AS materially_support_text,
           b.is_free AS is_free,
@@ -195,6 +202,7 @@ def get_subgraph(benefit_id: str = Query(..., description="中心にする制度
             "area_name": first["area_name"],
             "min_age_months": first["min_age_months"],
             "max_age_months": first["max_age_months"],
+            "age_source": first["age_source"],
             "cost_text": first["cost_text"],
             "cost_conditions_text": first["cost_conditions_text"],
             "monetary_support_text": first["monetary_support_text"],

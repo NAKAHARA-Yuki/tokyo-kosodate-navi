@@ -1,3 +1,4 @@
+import { AgeChip } from "@/components/age-chip";
 import { fetchBackend } from "@/lib/backend";
 import type { Benefit } from "@/lib/types";
 import { Heading, HeadingTitle } from "@/components/dads/heading";
@@ -15,20 +16,15 @@ export const dynamic = "force-dynamic";
 async function getBenefits(): Promise<Benefit[]> {
   const res = await fetchBackend("/api/benefits");
   if (!res.ok) {
+    // 握りつぶさず投げる。app/error.tsx が受け取って利用者向けの画面を出し、
+    // このメッセージ自体はサーバのログにだけ残る（本番ビルドではクライアントに渡らない）。
     throw new Error(`backend が ${res.status} を返しました`);
   }
   return res.json();
 }
 
 export default async function Home() {
-  let benefits: Benefit[] = [];
-  let error: string | null = null;
-
-  try {
-    benefits = await getBenefits();
-  } catch (reason) {
-    error = reason instanceof Error ? reason.message : "不明なエラー";
-  }
+  const benefits = await getBenefits();
 
   return (
     <main className="mx-auto max-w-3xl p-6">
@@ -36,9 +32,7 @@ export default async function Home() {
         <HeadingTitle level="h1">今受けられる子育て支援制度</HeadingTitle>
       </Heading>
 
-      {error ? (
-        <p className="text-red-700">読み込みに失敗しました: {error}</p>
-      ) : benefits.length === 0 ? (
+      {benefits.length === 0 ? (
         <p>制度が見つかりませんでした。</p>
       ) : (
         <ul className="flex flex-col gap-4">
@@ -59,6 +53,11 @@ export default async function Home() {
                   {b.category}
                 </ChipLabel>
                 {b.area_name && <ChipLabel variant="text">{b.area_name}</ChipLabel>}
+                <AgeChip
+                  source={b.age_source}
+                  minMonths={b.min_age_months}
+                  maxMonths={b.max_age_months}
+                />
                 {b.is_free && (
                   <ChipLabel variant="filled-1" color="green">
                     無料
