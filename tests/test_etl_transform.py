@@ -6,7 +6,12 @@
 
 import pytest
 
-from etl_documents import canonical_document_name, looks_like_document, split_belongings
+from etl_documents import (
+    canonical_document_name,
+    looks_like_document,
+    split_belongings,
+    strip_decorations,
+)
 from etl_graph import build_benefit_edges
 from etl_normalize import extract_links, normalize_date, normalize_time, normalize_zip
 from etl_statuses import _clean_codes, compute_age_bounds
@@ -253,6 +258,68 @@ class TestLooksLikeDocument:
     )
     def test_rejects_prose(self, name):
         assert looks_like_document(name) is False
+
+
+class TestRejectsNonDocuments:
+    """書類名でないものをノードにしない（issue #112）。
+
+    必要書類欄には書類名以外が大量に混ざる。実データ 9,369件のうち
+    **47.9% が `is_probable_document=false`** で、残った 4,880件の中にも
+    表組みの断片やリンクの文言が 260件あった。
+
+    これらがノードになると、詳細ページの「必要な書類」に
+    `|求職中|求職活動に関する申立書（PDF 310KB）|` のようなものが並ぶ。
+    """
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "|求職中|求職活動に関する申立書（PDF 310KB）|",  # 表組みの断片
+            "|1|申請書（PDF形式：52KB）|||",
+            "委任状はこちら",  # リンクの文言
+            "各種様式はこちら",
+            "本人確認ができる書類（外部サイトへリンク）",
+            "新宿区で住民税が課税されている場合には、公簿により確認をしますので、",  # 文の断片
+            "ただし、受診者の健康保険証で被保険者本人が確認できれば、",  # 前の文の続き
+        ],
+    )
+    def test_rejects(self, name):
+        assert looks_like_document(name) is False, f"{name!r} を書類として扱っている"
+
+    @pytest.mark.parametrize(
+        "name",
+        ["母子健康手帳", "委任状（PDF：30KB）", "申請者及び児童の戸籍謄本", "マイナンバーカード"],
+    )
+    def test_keeps_real_documents(self, name):
+        """飾りが付いていても書類名は落とさない。"""
+        assert looks_like_document(name) is True, f"{name!r} を落としている"
+
+    def test_length_is_checked_before_stripping_decorations(self):
+        """**長さは飾りを外す前に見る。**
+
+        外してから測ると、リンクの文言が40字以内に収まって通ってしまう
+        （実データで27件。実装中に実際に踏んだ）。
+        """
+        name = "ダウンロードは江東区ベビーシッター利用支援事業補助金交付申請書兼口座振替依頼書（PDF：450KB）"
+        assert looks_like_document(name) is False
+
+    def test_punctuation_is_checked_before_stripping(self):
+        """句読点も外す前に見る。strip_decorations が末尾の読点を落とすため。"""
+        assert looks_like_document("入園申込みに必要な書類一式については、子ども育成課、") is False
+
+
+class TestStripDecorations:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("医療証交付申請書 （PDF 117.1KB）新しいウィンドウで開きます", "医療証交付申請書"),
+            ("委任状（PDF：30KB）", "委任状"),
+            ("母子健康手帳", "母子健康手帳"),
+        ],
+    )
+    def test_strips(self, raw, expected):
+        """ファイルサイズ違いで同じ書類が別ノードに割れるのを防ぐ（実データで11種類）。"""
+        assert strip_decorations(raw) == expected
 
 
 class TestCanonicalDocumentName:

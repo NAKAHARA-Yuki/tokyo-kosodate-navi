@@ -22,21 +22,65 @@ NON_DOCUMENT_HINTS = (
     "必要です",
 )
 
+# 書類名ではなく「リンクの文言」や「表組みの断片」が混ざる。
+# is_probable_document=true の 4,880件を実データで見たときの内訳:
+#   HTML の断片（<br> や | の表組み）  213件  例: |求職中|求職活動に関する申立書（PDF 310KB）|
+#   「こちら」（リンク文言）              8件  例: 委任状はこちら
+#   「外部サイト」「外部リンク」            4件
+# いずれも1つの書類を指しておらず、ノードにすると「同じ書類で束ねる」が成立しない（issue #112）。
+NON_DOCUMENT_RE = re.compile(r"<[a-zA-Z/]|\||こちら|外部サイト|外部リンク")
+
+# 書類名に付く飾り。**判定ではなく表記の統一に使う**（これ自体は書類名を否定しない）。
+# 「医療証交付申請書 （PDF 117.1KB）新しいウィンドウで開きます」のように、
+# 自治体ごとにサイズが違うだけで別ノードに割れる（実データで11種類）。
+DECORATION_RE = re.compile(
+    r"\s*[（(][^（）()]*(?:PDF|ＰＤＦ|エクセル|Excel|ワード|Word|形式|KB|MB)[^（）()]*[）)]"
+    r"|新しいウィンドウで開きます|別ウィンドウで開きます",
+    re.IGNORECASE,
+)
+
 # 行頭の箇条書きマーカー: ・ - * ● (1) （1） 1. 1) 注釈1) など
 LIST_MARKER_RE = re.compile(
     r"^[\s]*(?:[・\-\*●○◆■]|[（(]?\s*[0-9０-９]{1,2}\s*[）)\.]|注釈\s*[0-9０-９]+\s*[）)])\s*"
 )
 
 
+def strip_decorations(name: str) -> str:
+    """書類名から表記の揺れを生む飾りを外す（ファイルサイズ・リンクの補助文言）。
+
+    **判定には使わない。** 「委任状（PDF：30KB）」は書類名であって、
+    括弧の中身が違うだけで別の書類になるわけではない。
+    """
+    if not name:
+        return name
+    return DECORATION_RE.sub("", name).strip(" 　,、")
+
+
 def looks_like_document(name: str) -> bool:
     """書類名らしいか判定する。説明文・注意書きを書類ノードとして表示しないための足切り。"""
     if not name:
         return False
-    text = name.strip()
-    if len(text) > 40:
+    raw = name.strip()
+    # **長さは元の文字列で見る。** 飾りを外してから測ると、
+    # 「ダウンロードは○○申請書兼口座振替依頼書（PDF：450KB）（別ウィンドウで開きます）」のような
+    # リンクの文言が40字以内に収まって通ってしまう（実データで27件。実際に踏んだ）。
+    if len(raw) > 40:
         return False
-    # 文として終わっているものは書類名ではなく説明文
-    if text.endswith(("。", "！", "？")):
+    text = strip_decorations(raw).strip()
+    if not text:
+        return False
+    # 1つの書類を指していないもの（表組みの断片・リンクの文言）
+    if NON_DOCUMENT_RE.search(text):
+        return False
+    # **句読点は元の文字列で見る。** strip_decorations は末尾の読点も落とすので、
+    # 外した後に見ると「…確認をしますので、」のような文の断片が通る（実際に踏んだ）。
+    #
+    # 文として終わっているものは書類名ではなく説明文。
+    # 読点で終わるものは**文の途中で切れた断片**（分割の副産物）。
+    if raw.endswith(("。", "！", "？", "、", "，")):
+        return False
+    # 接続表現で始まるものは前の文の続き。書類名が「ただし」で始まることはない
+    if raw.startswith(("ただし", "また", "なお", "その他", "および", "及び", "かつ")):
         return False
     if any(hint in text for hint in NON_DOCUMENT_HINTS):
         return False
@@ -61,7 +105,9 @@ def canonical_document_name(name: str) -> str:
     """書類名の表記ゆれを代表名に寄せる。該当しなければ元の名前をそのまま返す。"""
     if not name:
         return name
-    trimmed = name.strip().strip("「」『』（）()")
+    # ファイルサイズ等の飾りは代表名の一部ではない。外さないと
+    # 「医療証交付申請書（PDF 117.1KB）」と「…（PDF 123.0KB）」が別ノードになる。
+    trimmed = strip_decorations(name).strip().strip("「」『』（）()")
     for pattern, canonical in DOCUMENT_ALIASES:
         if pattern.match(trimmed):
             return canonical
