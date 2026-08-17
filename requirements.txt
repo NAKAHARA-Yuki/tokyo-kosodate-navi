@@ -7,5 +7,5 @@
 google-cloud-bigquery>=3.43.0,<4
 pandas>=3.0.5,<4
 requests>=2.34.2,<3
-pyarrow>=25.0.0,<26
+pyarrow>=25.0.1,<26
 db-dtypes>=1.7.1,<2
