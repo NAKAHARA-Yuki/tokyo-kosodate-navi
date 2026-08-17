@@ -245,6 +245,44 @@ class TestCompulsoryEducation:
         assert rule == "stage_compulsory_education"
         assert (lo, hi) == (months(6), months(15, 11))
 
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "市内に住所を有する義務教育就学前（6歳に達した日以降最初の3月31日）までの乳幼児",
+            "義務教育就学前（6歳に達した日以後最初の3月31日までの間）の児童",
+        ],
+    )
+    def test_before_compulsory_education_is_preschool(self, text):
+        """**「義務教育就学前」は就学前。** 前方一致で就学期の規則に食われてはいけない。
+
+        `義務教育就学` だけで判定していたため、乳幼児医療費助成 5件が
+        0〜71か月 → 72〜191か月になっていた。**0歳児にこの制度が出なくなる**（PR #128 のレビュー）。
+        """
+        lo, hi, rule = extract_age_range(text)
+        assert rule == "stage_preschool"
+        assert (lo, hi) == (0, months(5, 11))
+
+    def test_other_benefit_name_is_not_taken(self):
+        """**他制度の名前に反応してはいけない。** しかも当たっていたのは対象外の節。
+
+        ひとり親家庭等医療費助成制度の対象者欄。本則は「18歳に達した日以後の最初の3月31日まで」で、
+        `義務教育就学児医療費助成制度` は**対象にならない人**の説明に出てくるだけ。
+        72〜191か月と読むと、0〜5歳の子を持つひとり親にこの制度が出なくなる。
+        """
+        lo, hi, rule = extract_age_range(
+            "対象となる方\n"
+            "村内に住所があり、次のいずれかに該当する児童（児童が18歳に達した日以後の"
+            "最初の3月31日まで・中度以上の障害を持つ児童は20歳未満）とその児童を養育している"
+            "父、母または養育者\n"
+            "・父母が離婚した児童\n"
+            "対象外となる方\n"
+            "・乳幼児医療費助成制度医療証、義務教育就学児医療費助成制度医療証、"
+            "心身障害者医療費助成制度医療証を交付されている方"
+        )
+        assert rule != "stage_compulsory_education"
+        # main と同じ読み方に戻ること（この PR で変えるつもりが無かった行）
+        assert (lo, hi, rule) == (0, months(19, 11), "upper_years_exclusive")
+
 
 class TestAgeRangesAttachedToChild:
     """「3～4か月児」「0～2歳児クラス」のように、レンジが子どもを指す語に直接付く形。"""
