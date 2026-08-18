@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 import sys
+import unicodedata
 from collections import Counter
 from pathlib import Path
 
@@ -30,6 +31,14 @@ MENTIONS_WORK = r"就労|勤務|就職|求職|仕事"
 WORK_THRESHOLD_RE = re.compile(r"(月|週|1日|一日)\s*([0-9０-９]{1,3})\s*(時間|日)\s*以上")
 
 CHILDCARE_RE = re.compile(r"保育|学童|預かり|クラブ|こども園|幼稚園")
+
+# 事由の主体を切り分けるための補助。**「保護者の疾病」と「障害のある児童」は別のもの。**
+SICKNESS_RE = re.compile(r"疾病|病気|障害")
+GUARDIAN_SUBJECT_RE = re.compile(r"(?:保護者|父母|父|母|申請者|養育者)[^。]{0,20}?(?:疾病|病気|障害)")
+CHILD_SUBJECT_RE = re.compile(
+    r"(?:児童|子ども|お子|乳幼児)[^。]{0,15}?(?:疾病|病気|障害)"
+    r"|(?:疾病|病気|障害)[^。]{0,10}?(?:のある|の)?(?:児童|子ども|お子)"
+)
 
 CATEGORIES: list[tuple[str, str]] = [
     ("① 就労時間のしきい値", WORK_THRESHOLD_RE.pattern),
@@ -106,7 +115,13 @@ def main() -> int:
     thresholds: Counter[str] = Counter()
     for row in rows:
         for m in WORK_THRESHOLD_RE.finditer(row["txt"]):
-            thresholds[f"{m.group(1)}{m.group(2)}{m.group(3)}以上"] += 1
+            # **NFKC で正規化してから数える。** 正規表現は全角も拾うが、
+            # ラベルをそのまま使うと「月48時間以上」と「月４８時間以上」が別項目に割れ、
+            # 国の下限である月48時間が過小に出る（レビューでの指摘）。
+            label = unicodedata.normalize("NFKC", f"{m.group(1)}{m.group(2)}{m.group(3)}以上")
+            thresholds[label] += 1
+    with_threshold = sum(1 for r in rows if WORK_THRESHOLD_RE.search(r["txt"]))
+    print(f"  （しきい値を持つ制度 {with_threshold} 件 / 出現 {sum(thresholds.values())} 回。単位が違う）")
     for label, count in thresholds.most_common(10):
         print(f"  {count:4}  {label}")
 
@@ -119,6 +134,25 @@ def main() -> int:
                 reasons[name] += 1
     for name, count in reasons.most_common():
         print(f"  {count:4}  {name}")
+
+    # **この数え方は主体を見ていない。** 「保護者の事由」以外（子どもが主語のもの、
+    # 除外条件、融資制度の要件）も混ざるので、属性の規模を見積もるのには使えない。
+    # 代表として疾病・障害を主語で切り分けて、どのくらいずれるかを出す（レビューでの指摘）。
+    guardian = child = ambiguous = 0
+    for row in rows:
+        if not SICKNESS_RE.search(row["txt"]):
+            continue
+        if GUARDIAN_SUBJECT_RE.search(row["txt"]):
+            guardian += 1
+        elif CHILD_SUBJECT_RE.search(row["txt"]):
+            child += 1
+        else:
+            ambiguous += 1
+    print("\n── 主体を見るとどれだけ減るか（疾病・障害で確認）──")
+    print(f"  一致 {guardian + child + ambiguous} 件")
+    print(f"    保護者が主語   {guardian:4} 件  ← 属性の規模を見積もるならこちら")
+    print(f"    子どもが主語   {child:4} 件  （除外条件を含む）")
+    print(f"    どちらとも取れない {ambiguous:4} 件")
     return 0
 
 
