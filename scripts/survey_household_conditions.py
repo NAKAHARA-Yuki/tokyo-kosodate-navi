@@ -122,20 +122,29 @@ def main() -> int:
     print(f"  {'H どれにも当たらない':24} {len(unmatched):5} 件 ({len(unmatched) / len(real) * 100:4.1f}%)")
 
     # --- 4. いま持っている属性で足りるか ---
-    single = child_count = other_only = 0
+    #
+    # **`other_only` は下限。** ひとり親や多子の条件に「一つでも該当したら」除外しているので、
+    # 「ひとり親であり、かつ扶養義務者の所得が…」のように既存属性の条件と未対応の条件が
+    # 同じ条件文に同居していると、その行は数に入らない（レビューでの指摘）。
+    # 同居している行を `mixed` として別に数え、上限も出す。
+    single = child_count = other_only = mixed = 0
     for row in real:
         text = denoise(row["txt"])
         is_single = bool(ALREADY_SINGLE_PARENT_RE.search(text))
         is_multi = bool(ALREADY_CHILD_COUNT_RE.search(text))
+        has_other = bool(OTHER_HOUSEHOLD_RE.search(text))
         single += is_single
         child_count += is_multi
-        if OTHER_HOUSEHOLD_RE.search(text) and not is_single and not is_multi:
+        if has_other and not is_single and not is_multi:
             other_only += 1
+        elif has_other:
+            mixed += 1
 
     print("\n── すでに持っている属性で表せるか ───")
     print(f"  ひとり親（#77 で判定済み）        {single:5} 件")
     print(f"  子どもの人数（#75 で複数対応済み）  {child_count:5} 件")
-    print(f"  それ以外の世帯要件だけを持つもの    {other_only:5} 件  ← 新しい属性が要るのはここ")
+    print(f"  それ以外の世帯要件だけを持つもの    {other_only:5} 件  ← 新しい属性が要るのはここ（下限）")
+    print(f"  既存属性の条件と同居しているもの    {mixed:5} 件  ← 上限は {other_only + mixed} 件")
     return 0
 
 
