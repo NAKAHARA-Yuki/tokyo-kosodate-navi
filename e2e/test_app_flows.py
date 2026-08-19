@@ -413,6 +413,21 @@ class TestAttributeFilter:
     スタブがパラメータを見るようになったので、結果の中身で検証します。
     """
 
+    @pytest.fixture
+    def _stub_only(self):
+        """スタブの制度構成に依存するテストにだけ付ける。
+
+        **クラス全体には付けない。** `test_inferred_age_is_labeled_as_estimate` は
+        実データでも通る書き方なので、実環境でも回したい。
+
+        下の3つは、スタブが「制度名に区名を入れている」ことと、
+        `3歳児健康診査` などが一覧の先頭に出ることを前提にしている。
+        実データでは制度名に区名が入らず、既定の一覧（先頭40件・タイトル順）は
+        `0歳…` `1歳6か月児健康診査` で埋まるため、前提そのものが成立しない。
+        """
+        if os.environ.get("E2E_BASE_URL"):
+            pytest.skip("スタブの制度構成（制度名に区名が入る等）に依存するため、実データでは実行しない")
+
     def titles(self, page) -> list[str]:
         return page.locator(".result-item .title").all_inner_texts()
 
@@ -431,14 +446,14 @@ class TestAttributeFilter:
             )
         return self.titles(page)
 
-    def test_area_filter_narrows_to_that_area(self, app_page):
+    def test_area_filter_narrows_to_that_area(self, app_page, _stub_only):
         """千代田区を選んだら千代田区の制度だけになること。"""
         app_page.select_option("#area-select", "131016")
         titles = self.settle(app_page, "t.length > 0 && t.every(x => x.includes('千代田区'))")
         assert titles, "千代田区の制度が1件も出ていません"
         assert all("千代田区" in t for t in titles), f"他の区の制度が混ざっています: {titles}"
 
-    def test_area_filter_excludes_other_areas(self, app_page):
+    def test_area_filter_excludes_other_areas(self, app_page, _stub_only):
         """台東区を選んだら千代田区の制度が消えること。
 
         「選んだ区のものが出る」だけでは、絞り込まず全件返していても通ります。
@@ -453,7 +468,7 @@ class TestAttributeFilter:
         assert titles, "台東区の制度が1件も出ていません"
         assert not any("千代田区" in t for t in titles), f"千代田区が残っています: {titles}"
 
-    def test_age_filter_drops_out_of_range_benefits(self, app_page):
+    def test_age_filter_drops_out_of_range_benefits(self, app_page, _stub_only):
         """5歳では、対象年齢を外れる制度が消えること。
 
         スタブは `app/queries.py` の `age_filter_sql()` と同じ判定をします
