@@ -180,12 +180,16 @@ curl -sS "https://oauth2.googleapis.com/tokeninfo?access_token=$(gcloud auth pri
   ビルドした日によって中身が変わり、prod と staging が別物になる
   （google-genai が 2.14→2.16 に上がって Gemini 呼び出しが 503 になった実績あり）。
   ロックは本番と同じ `python:3.12-slim` の中で生成する。ローカル（3.14）で作ると本番で入らない。
-- **BigQuery の GQL（`GRAPH ... MATCH`）は Enterprise エディションの予約が必須になった。**
-  コード側の変更なしに `BigQuery Graph queries require a reservation with Enterprise or
-  Enterprise Plus edition.` で全滅する（詳細は [docs/adr/0003](docs/adr/0003-graph-schema.md)）。
-  `/api/subgraph` だけでなく `/api/benefits/match` の `next_steps`（`_fetch_next_steps`）も
-  同じ理由で壊れていた。PROPERTY GRAPH の定義は残したまま、REQUIRES / REQUIRES_DOC /
-  LEADS_TO を辿るクエリは通常SQLの JOIN に書き換えて回避した。
+- **BigQuery の GQL（`GRAPH ... MATCH`）は一度使えなくなり、2026-08-13 時点では再び使える。**
+  Enterprise エディションの予約必須になった時期があり、コード側の変更なしに
+  `BigQuery Graph queries require a reservation with Enterprise or Enterprise Plus edition.`
+  で全滅した。`/api/subgraph` も `/api/benefits/match` の `next_steps` も同じ理由で壊れ、
+  PROPERTY GRAPH の定義は残したまま通常SQLの JOIN に書き換えて回避した。
+  **その後、dev / staging / prod のすべてで GQL が通ることを実測している**
+  （3ホップで 1.8 秒）。予約が付いたのか制限が外れたのかは未確認
+  （`claude-dev` に `bigquery.reservations.list` が無く 403）。
+  **JOIN への書き換えを戻すかどうかは #112 で判断する。**
+  詳細は [docs/adr/0003](docs/adr/0003-graph-schema.md)。
 - **E2E が「Playwright / Chromium が動かない」ように見えたら、サブリソースの取得を疑う。**
   `page.goto` は `waitUntil="load"` で全サブリソースを待つため、1つでも取れないと
   HTML 自体が 200 で返っていてもタイムアウトする。エラーは「タイムアウト」としか
