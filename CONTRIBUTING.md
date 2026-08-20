@@ -157,9 +157,11 @@ docs(adr): 年齢推定の設計判断を記録
 ## テスト
 
 ```bash
-make test    # ユニット・API結合（GCP不要）
-make e2e     # E2E（ブラウザ操作。スタブ版アプリを自動起動。GCP不要）
-make check   # 全部
+make test       # ユニット・API結合（GCP不要）
+make e2e        # E2E（ブラウザ操作。スタブ版アプリを自動起動。GCP不要）
+make check      # 全部
+make cov        # 一度も実行されていない経路を探す（数値目標ではない）
+make mutations  # わざとバグを入れて、落ちるべきテストが落ちるか確かめる
 ```
 
 - **純粋ロジック（`src/age_rules.py`、ETL の変換関数）は必ずテストを書く。**
@@ -171,6 +173,10 @@ make check   # 全部
   違反ゼロを必須にしています（[ADR 0016](docs/adr/0016-accessibility-baseline.md)）。
   デザインシステムの `Heading` はスタイル用の `<div>` で、見出し要素は `HeadingTitle` です。
   取り違えると**見た目は見出しなのにアクセシビリティツリーには何も無い**状態になります。
+- **重要な不変条件を守るテストを足したら、`scripts/check_mutations.py` に変異を1つ足す。**
+  「通っていること」と「壊れたときに落ちること」は別で、このリポジトリでは
+  テストが緑のままバグが本番に出た実績があります
+  （→ [docs/test-effectiveness.md](docs/test-effectiveness.md)）。
 
 ### E2E は2段構え
 
@@ -290,3 +296,4 @@ Dockerfile は `--require-hashes` 付きで入れるため、ロックを更新�
 - 設計の背景 → `docs/adr/`
 - データの意味 → `docs/data-model.md`
 - 過去に踏んだ落とし穴 → `CLAUDE.md` の「落とし穴」節
+- テストが何を守れていて何を守れていないか → `docs/test-effectiveness.md`

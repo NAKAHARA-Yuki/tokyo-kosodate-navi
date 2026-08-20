@@ -12,6 +12,7 @@
 
 import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -46,11 +47,30 @@ def _wait_until_ready(url: str, path: str = "/api/healthz", timeout: float = 90.
 
 
 def _terminate(proc: subprocess.Popen) -> None:
-    proc.terminate()
+    """**プロセスグループごと落とす。**
+
+    `npm start` は自分では待ち受けず、子として `next-server` を起動する。
+    `proc.terminate()` は npm にしか届かないので、**next-server が生き残って
+    ポートとメモリを掴んだまま init に引き取られる**（`ppid=1` の孤児になる）。
+
+    実際にこれが溜まっていた。E2E を回すたびに1つ増え、15日で 47個・約2.5GB を占有して
+    swap を食い潰し、`npm run build` が終わらなくなっていた（issue #64 の変異検証中に判明）。
+    テストは緑のままなので、遅くなる以外に兆候が出ない。
+    """
+    if proc.poll() is not None:
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        proc.terminate()
     try:
         proc.wait(timeout=10)
     except subprocess.TimeoutExpired:
-        proc.kill()
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            proc.kill()
+        proc.wait(timeout=10)
 
 
 @pytest.fixture(scope="session")
@@ -73,6 +93,9 @@ def base_url() -> str:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         cwd=str(ROOT),
+        # 自分をリーダーにした新しいプロセスグループで起動する。
+        # こうしないと `_terminate` の killpg が pytest 自身を巻き込む。
+        start_new_session=True,
     )
     backend_url = f"http://127.0.0.1:{backend_port}"
 
@@ -102,6 +125,8 @@ def base_url() -> str:
                 "BACKEND_REQUIRES_AUTH": "false",
                 "NEXT_TELEMETRY_DISABLED": "1",
             },
+            # npm は next-server を子として起動する。グループごと落とすために要る。
+            start_new_session=True,
         )
         frontend_url = f"http://127.0.0.1:{frontend_port}"
         _wait_until_ready(frontend_url)

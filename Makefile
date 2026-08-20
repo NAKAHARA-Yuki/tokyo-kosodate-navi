@@ -319,6 +319,16 @@ test: ## 単体・結合テストを実行する（GCP不要）
 e2e: ## E2Eテストを実行する（ブラウザ操作。GCP不要）
 	$(VENV)/bin/pytest e2e
 
+.PHONY: cov
+cov: ## カバレッジを測る（未実行の経路を探す道具。数値目標ではない）
+	@# 目的は「一度も実行されていない経路」を見つけること（issue #64）。
+	@# 割合を上げること自体は目的ではないので、閾値での失敗は設定していない。
+	$(VENV)/bin/pytest tests --cov=src --cov=app --cov-report=term-missing
+
+.PHONY: mutations
+mutations: ## テストが本当にバグを捕まえるかを変異で確かめる（docs/test-effectiveness.md）
+	$(PY) scripts/check_mutations.py
+
 .PHONY: e2e-smoke
 e2e-smoke: ## デプロイ先に対してスモークテストを実行する (例: make e2e-smoke ENV=staging)
 	E2E_BASE_URL=$$($(MAKE) --no-print-directory url ENV=$(ENV)) $(VENV)/bin/pytest e2e -m smoke

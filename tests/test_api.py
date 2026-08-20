@@ -132,6 +132,21 @@ class TestMatchBenefits:
         assert any("台東区" in r for r in reasons)
         assert any("40" in r for r in reasons)
 
+    def test_age_filter_uses_effective_columns(self, client, bq):
+        """**きょうだい対応の `ages_filter_sql` にも同じ制約がかかること。**
+
+        `/api/benefits` 側は `test_age_filter_uses_effective_columns` で守られていたが、
+        こちら（`/api/benefits/match`）は素の `min/max_age_months` に書き換えても
+        テストが1件も落ちなかった（issue #64 の変異検証で判明）。
+        素の列は6割超が NULL なので、絞ると「対象なのに出ない」が起きる（CLAUDE.md）。
+        """
+        bq.set_rows([])
+        client.get("/api/benefits/match?area_code=131067&child_age_months=40&include_skill_tree=false")
+
+        where_part = bq.last_query.split("WHERE", 1)[1].split("ORDER BY", 1)[0]
+        assert "effective_min_age_months" in where_part, bq.last_query
+        assert "effective_max_age_months" in where_part, bq.last_query
+
     def test_single_parent_reason_is_added(self, client, bq):
         """ひとり親向けに分類されている制度に理由が付くこと（issue #77）。"""
         bq.set_rows([self.match_row(is_single_parent_target=True)])
@@ -531,6 +546,18 @@ class TestTimeline:
         stage = next(s for s in body["stages"] if s["key"] == "0y")
         assert stage["benefits"][0]["title"] == "乳児健診"
 
+    def test_age_range_uses_effective_columns(self, client, bq):
+        """ライフステージとの重なり判定も effective_* で見ること。
+
+        ここも素の列に書き換えてテストが1件も落ちなかった箇所（issue #64 の変異検証）。
+        timeline は「範囲どうしの重なり」で NULL の扱いも他と逆（許容ではなく除外）なので、
+        `queries.py` に共通化されておらず、書き換えても他のテストに波及しない。
+        """
+        bq.set_rows([])
+        client.get("/api/timeline")
+        assert "b.effective_min_age_months <= s.hi" in bq.last_query, bq.last_query
+        assert "b.effective_max_age_months >= s.lo" in bq.last_query, bq.last_query
+
     def test_single_query_for_all_stages(self, client, bq):
         """ステージごとにクエリを投げると往復が増えて体感が遅くなるため1クエリにまとめている。"""
         bq.set_rows([])
@@ -616,6 +643,78 @@ class TestDraftReview:
         assert res.status_code == 200
         assert res.json()["disclaimer"], "AI生成である旨の注記が必要"
         assert "書かれていないこと" in captured["prompt"]
+
+
+class TestJudgementPathDoesNotUseLLM:
+    """**判定に LLM を使わない**という最重要の設計原則を、実行時に固定する（CLAUDE.md / ADR 0001）。
+
+    これまでこの原則を守っていたのは規約とレビューだけで、**テストは1件も無かった。**
+    `match_benefits` の中に Gemini 呼び出しを1行足す変異を入れても、
+    例外を握りつぶす形にすると 288件すべてが緑のままだった（issue #64 の変異検証）。
+
+    誤判定とレスポンス遅延を判定経路に持ち込まないための原則なので、
+    「呼んでよいのは `/api/support/draft-review` だけ」を呼び出しの有無で見る。
+    """
+
+    @pytest.fixture
+    def genai_calls(self, monkeypatch):
+        """Gemini クライアントの生成を記録する。**生成自体を数える。**
+
+        `generate_content` を数えると、クライアントを作るだけ作って
+        別経路で呼ぶ書き方をすり抜ける。
+        """
+        import dependencies
+
+        calls: list[str] = []
+
+        def spy():
+            calls.append("built")
+            raise AssertionError("判定経路で Gemini クライアントを生成しています")
+
+        monkeypatch.setattr(dependencies, "_build_genai_client", spy)
+        return calls
+
+    JUDGEMENT_REQUESTS = [
+        ("GET", "/api/benefits?age_months=40", None),
+        ("GET", "/api/benefits/match?area_code=131067&child_age_months=40&include_skill_tree=false", None),
+        ("GET", "/api/timeline", None),
+        ("GET", "/api/subgraph?benefit_id=psid-1", None),
+        ("GET", "/api/categories", None),
+        ("GET", "/api/areas", None),
+        ("GET", "/api/data-source", None),
+        ("POST", "/api/user/profile", {"area_code": "131067", "children": [{"birth_date": "2024-01-01"}]}),
+    ]
+
+    @pytest.mark.parametrize(("method", "path", "body"), JUDGEMENT_REQUESTS)
+    def test_no_gemini_client_is_built(self, client, bq, genai_calls, method, path, body):
+        bq.set_rows([])
+        if method == "GET":
+            client.get(path)
+        else:
+            client.post(path, json=body)
+        assert genai_calls == [], f"{method} {path} が Gemini を呼んでいます"
+
+    def test_draft_review_is_the_only_exception(self, client, bq, genai_calls):
+        """**この1本だけは呼んでよい。** 上のテストが「単に Gemini を呼べない環境だから
+        緑になっている」のではないことを示すために、呼ぶ経路が実際に呼ぶことも見る。
+        """
+        columns = (
+            "title",
+            "category",
+            "area_name",
+            "summary",
+            "description",
+            "target_persons_text",
+            "conditions_text",
+            "monetary_support_text",
+            "procedure_method",
+            "official_url",
+        )
+        # 制度の取得 → キャッシュ参照（空）の順。同じ行を返すとキャッシュヒット扱いになり
+        # Gemini まで到達しないので、クエリごとに返す行を変える。
+        bq.set_rows_sequence([dict.fromkeys(columns, "x")], [])
+        client.post("/api/support/draft-review", json={"benefit_id": "psid-1"})
+        assert genai_calls == ["built"], "伴走経路で Gemini が呼ばれていません"
 
 
 class TestDataSource:
