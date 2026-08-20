@@ -12,7 +12,7 @@ from etl_documents import (
     split_belongings,
     strip_decorations,
 )
-from etl_graph import build_benefit_edges, transform
+from etl_graph import build_benefit_edges, build_benefit_row, transform
 from etl_normalize import extract_links, normalize_date, normalize_time, normalize_zip
 from etl_statuses import _clean_codes, compute_age_bounds
 
@@ -608,3 +608,45 @@ class TestRequiresBenefitEdges:
         """引けない分は条件原文の提示に倒す（#63）。誤ったエッジを作らない。"""
         benefits = {"b": self._b("給付金", "心身障害者福祉手当を受けている方")}
         assert self._edges(benefits) == []
+
+
+class TestIncomeConditionsInRow:
+    """所得条件が benefits 行に入ることを、呼び出し口（build_benefit_row）で確かめる。
+
+    ルール単体が正しくても呼び出し側が別のテキストを渡していれば意味が無い
+    （issue #119 でそれをやった）。ここでは実際に組み立てた行を見る。
+    """
+
+    @staticmethod
+    def _row(conditions=None, target_persons=None):
+        rec = {
+            "basicInformation": {},
+            "institutionName": {"canonicalName": "テスト制度"},
+            "target": {"conditions": conditions, "targetPersons": target_persons},
+        }
+        return build_benefit_row(rec, "test+1")
+
+    def test_金額のしきい値が列に入る(self):
+        row = self._row(conditions="市町村民税（所得割）が23万5千円未満であること")
+        assert row["income_max_yen"] == 235_000
+        assert row["income_basis"] == "tax_levy"
+        assert row["income_rule"] == "threshold_upper"
+
+    def test_対象者テキストからも拾う(self):
+        row = self._row(target_persons="生活保護を受給している世帯")
+        assert row["requires_welfare"] is True
+        assert row["excludes_welfare"] is False
+
+    def test_所得条件が無ければ空のまま(self):
+        row = self._row(conditions="18歳未満の児童を養育している方")
+        assert row["income_max_yen"] is None
+        assert row["income_basis"] is None
+        assert row["requires_non_taxable"] is False
+        assert row["requires_welfare"] is False
+        assert row["excludes_welfare"] is False
+        assert row["income_rule"] is None
+
+    def test_根拠の文が残る(self):
+        row = self._row(conditions="住民税非課税世帯の方が対象です")
+        assert row["requires_non_taxable"] is True
+        assert "非課税" in row["income_evidence"]
