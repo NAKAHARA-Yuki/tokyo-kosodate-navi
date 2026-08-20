@@ -27,6 +27,7 @@ from etl_statuses import (
     tag_code_label,
 )
 from etl_util import _clean_text, _first_present, _get, _short_hash
+from income_rules import extract_income_condition
 
 # 制度ID/制度名など、想定される代替フィールド名（自動判別用の候補）
 BENEFIT_ID_CANDIDATES = ["制度ID", "benefit_id", "benefitId", "id", "psid"]
@@ -120,6 +121,10 @@ def build_benefit_row(rec: dict, benefit_id: str) -> dict:
     conditions_text = clean_with_links(target.get("conditions")) if isinstance(target, dict) else None
     target_persons_text = clean_with_links(target.get("targetPersons")) if isinstance(target, dict) else None
 
+    # 所得条件を本文から抽出する。読み取れたものだけ構造化列に入れ、
+    # 読み取れなかったものは conditions_text の提示に倒す（issue #76 / #63）
+    income = extract_income_condition(f"{conditions_text or ''} {target_persons_text or ''}")
+
     # --- 金額（書式が制度ごとに違うため数値化せず原文保持） ---
     cost_text = clean_with_links(rec.get("cost"))
     monetary_support_text = clean_with_links(support.get("monetarySupport"))
@@ -174,6 +179,20 @@ def build_benefit_row(rec: dict, benefit_id: str) -> dict:
         "has_free_text_conditions": bool(conditions_text),
         "conditions_text": conditions_text,
         "target_persons_text": target_persons_text,
+        # 本文から読み取れた所得条件。読み取れなければ NULL / False のまま
+        "income_max_yen": income.max_yen if income else None,
+        # しきい値ちょうどの人が対象かどうか。**None はしきい値そのものが無いという意味**で、
+        # False（＝未満）とは違う。判定に使うときは NULL を「対象」に倒さないこと。
+        "income_max_inclusive": income.max_inclusive if income else None,
+        # しきい値が何の額か（income / income_tax / tax_levy / salary）。
+        # 所得・所得税額・所得割額は別の数字なので、揃えずに比較してはいけない
+        "income_basis": income.basis if income else None,
+        "requires_non_taxable": bool(income and income.requires_non_taxable),
+        "requires_taxable": bool(income and income.requires_taxable),
+        "requires_welfare": bool(income and income.requires_welfare),
+        "excludes_welfare": bool(income and income.excludes_welfare),
+        "income_rule": income.rule if income else None,
+        "income_evidence": income.evidence if income else None,
         # ===== 費用・助成 =====
         "cost_text": cost_text,
         "cost_conditions_text": clean_with_links(rec.get("costConditions")),
