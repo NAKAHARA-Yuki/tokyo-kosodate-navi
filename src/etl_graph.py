@@ -3,6 +3,7 @@
 import pandas as pd
 
 from age_rules import extract_age_range, is_prenatal
+from benefit_refs import extract_required_benefit_names, title_refers_to
 from etl_documents import (
     DOCS_CANDIDATES,
     canonical_document_name,
@@ -262,8 +263,13 @@ def build_benefit_edges(benefits: dict, benefit_docs: dict):
 
     - NEXT_STEP : 同一自治体で年齢帯が地続きの制度（妊娠→出生→健診→予防接種…の流れ）
     - SHARED_DOC: 同一自治体で特徴的な必要書類を共有する制度（ついで申請できる）
+    - REQUIRES_BENEFIT: 条件文に「〜を受けていること」と書かれている制度（issue #121）
 
-    LLMは使わず、年齢と書類の一致という機械的に検証できる根拠のみを使う。
+    LLMは使わず、機械的に検証できる根拠のみを使う。
+
+    **NEXT_STEP は根拠が弱い。** 年齢が隣り合っているだけで、制度としての関係は無い
+    （「児童手当 → 日本脳炎予防接種」。ADR 0003 / issue #121）。
+    REQUIRES_BENEFIT は**条件文にそう書いてある**ので、利用者に見せられる根拠になる。
     """
     edges = []
     seen = set()
@@ -324,6 +330,20 @@ def build_benefit_edges(benefits: dict, benefit_docs: dict):
             for i, src in enumerate(sharers):
                 for dst in sharers[i + 1 :]:
                     add_edge(src, dst, "SHARED_DOC", f"同じ書類（{doc_id}）が必要")
+
+        # ---- REQUIRES_BENEFIT: 条件文が前提として挙げている制度をつなぐ ----
+        #
+        # **向きは「前提 → その制度」。** 児童扶養手当が認定されたら次にこれが申請できる、
+        # という導線になる。dev では 134本引け、うち 121本が児童扶養手当を前提にしている
+        # （児童扶養手当が所得審査の代理になっているため。issue #124）。
+        for dst in ids:
+            row = benefits[dst]
+            text = f"{row.get('conditions_text') or ''} {row.get('target_persons_text') or ''}"
+            for name in extract_required_benefit_names(text):
+                for src in ids:
+                    if src == dst or not title_refers_to(benefits[src].get("title"), name):
+                        continue
+                    add_edge(src, dst, "REQUIRES_BENEFIT", f"条件に「{name}を受けている」とある")
 
     return edges
 

@@ -303,8 +303,15 @@ class TestCleanCodes:
 
 
 class TestBuildBenefitEdges:
-    def _benefit(self, area, lo, hi):
-        return {"area_code": area, "effective_min_age_months": lo, "effective_max_age_months": hi}
+    def _benefit(self, area, lo, hi, title=None, conditions=None):
+        return {
+            "area_code": area,
+            "effective_min_age_months": lo,
+            "effective_max_age_months": hi,
+            "title": title,
+            "conditions_text": conditions,
+            "target_persons_text": None,
+        }
 
     def test_next_step_links_contiguous_ages(self):
         benefits = {
@@ -345,3 +352,74 @@ class TestBuildBenefitEdges:
         benefits = {"a": self._benefit("131067", 0, 11)}
         edges = build_benefit_edges(benefits, {"a": {"DOC_x"}})
         assert all(e["from_benefit_id"] != e["to_benefit_id"] for e in edges)
+
+
+class TestRequiresBenefitEdges:
+    """条件文が前提として挙げている制度をつなぐ（issue #121 / #124）。
+
+    `NEXT_STEP` は年齢が地続きなだけで、制度としての関係が無い。
+    こちらは**条件文にそう書いてある**ので、利用者に見せられる根拠になる。
+    """
+
+    def _b(self, title, conditions=None):
+        return {
+            "area_code": "131067",
+            "effective_min_age_months": None,
+            "effective_max_age_months": None,
+            "title": title,
+            "conditions_text": conditions,
+            "target_persons_text": None,
+        }
+
+    def _edges(self, benefits):
+        return [e for e in build_benefit_edges(benefits, {}) if e["relation"] == "REQUIRES_BENEFIT"]
+
+    def test_前提の制度からエッジを引く(self):
+        benefits = {
+            "a": self._b("児童扶養手当"),
+            "b": self._b("ひとり親家庭高等職業訓練促進給付金", "児童扶養手当の支給を受けている方"),
+        }
+        edges = self._edges(benefits)
+        assert len(edges) == 1
+        # **向きは「前提 → その制度」。** 認定されたら次にこれが申請できる、という導線
+        assert (edges[0]["from_benefit_id"], edges[0]["to_benefit_id"]) == ("a", "b")
+        assert "児童扶養手当を受けている" in edges[0]["reason"]
+
+    def test_受けていないことが条件の文からは引かない(self):
+        """**肯定とほとんど同じ形をしている。** 逆に取ると意味が反転する。"""
+        benefits = {
+            "a": self._b("児童扶養手当"),
+            "b": self._b("給付金", "過去にこの給付金を受けたことがない方。児童扶養手当を受給していない方"),
+        }
+        assert self._edges(benefits) == []
+
+    def test_同じ制度文に肯定と否定が同居していても肯定だけ拾う(self):
+        """高等職業訓練促進給付金は実データでこの形（#139）。文単位で判定する。"""
+        benefits = {
+            "a": self._b("児童扶養手当"),
+            "b": self._b(
+                "高等職業訓練促進給付金",
+                "児童扶養手当の支給を受けている方。過去にこの給付金を受けたことがない方",
+            ),
+        }
+        assert len(self._edges(benefits)) == 1
+
+    def test_特別児童扶養手当を児童扶養手当と混同しない(self):
+        """**部分一致で引いてはいけない。** 両者は別の制度で、dev では誤りが126本できた。"""
+        benefits = {
+            "a": self._b("特別児童扶養手当"),
+            "b": self._b("給付金", "児童扶養手当の支給を受けている方"),
+        }
+        assert self._edges(benefits) == []
+
+    def test_他の自治体の制度にはつながない(self):
+        benefits = {
+            "a": {**self._b("児童扶養手当"), "area_code": "131016"},
+            "b": self._b("給付金", "児童扶養手当の支給を受けている方"),
+        }
+        assert self._edges(benefits) == []
+
+    def test_前提が同じ自治体に無ければ引かない(self):
+        """引けない分は条件原文の提示に倒す（#63）。誤ったエッジを作らない。"""
+        benefits = {"b": self._b("給付金", "心身障害者福祉手当を受けている方")}
+        assert self._edges(benefits) == []
