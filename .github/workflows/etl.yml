@@ -1,0 +1,79 @@
+name: ETL
+
+# レジストリを取得して BigQuery にロードし直す。
+#
+# 手元のコンテナからは取得元（data.storage.data.metro.tokyo.lg.jp）に到達できないため、
+# ETL を回せるのは実質ここだけになる。手動実行のみで、自動では絶対に走らせない
+# （WRITE_TRUNCATE で対象データセットを上書きするため）。
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 対象環境
+        required: true
+        type: choice
+        options: [dev, staging, prod]
+        default: dev
+      confirm:
+        description: 上書きを承知していることの確認。対象環境名をそのまま入力する
+        required: true
+        type: string
+
+env:
+  GCP_PROJECT_ID: opendatahackathon-503500
+
+jobs:
+  etl-dev:
+    name: ETL (dev)
+    if: inputs.target == 'dev'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/run-etl
+        with:
+          target: dev
+          confirm: ${{ inputs.confirm }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+  etl-staging:
+    name: ETL (staging)
+    if: inputs.target == 'staging'
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/run-etl
+        with:
+          target: staging
+          confirm: ${{ inputs.confirm }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+  etl-prod:
+    name: ETL (prod)
+    if: inputs.target == 'prod'
+    runs-on: ubuntu-latest
+    # 本番データの上書き。GitHub Environments の required reviewers で承認を必須にする
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/run-etl
+        with:
+          target: prod
+          confirm: ${{ inputs.confirm }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          project_id: ${{ env.GCP_PROJECT_ID }}

@@ -1,0 +1,75 @@
+name: run-etl
+description: レジストリを取得して BigQuery にロードし、PROPERTY GRAPH を作り直して検証する
+
+inputs:
+  target:
+    description: APP_ENV に渡す環境名
+    required: true
+  confirm:
+    description: 対象環境名と一致していなければ実行しない
+    required: true
+  workload_identity_provider:
+    required: true
+  service_account:
+    required: true
+  project_id:
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # 環境を取り違えたまま WRITE_TRUNCATE を走らせないための歯止め。
+    # Makefile の `read -p "続行しますか?"` に相当する（CI では対話できないため入力で代用）
+    - name: 確認入力を照合する
+      shell: bash
+      run: |
+        if [ "${{ inputs.confirm }}" != "${{ inputs.target }}" ]; then
+          echo "::error::confirm には対象環境名（${{ inputs.target }}）をそのまま入力してください"
+          exit 1
+        fi
+        echo "::notice::${{ inputs.target }} のデータセットを WRITE_TRUNCATE で上書きします"
+
+    - uses: actions/setup-python@v7
+      with:
+        python-version: "3.12"
+        cache: pip
+        cache-dependency-path: requirements.txt
+
+    - name: 依存関係をインストール
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - uses: google-github-actions/auth@v3
+      with:
+        workload_identity_provider: ${{ inputs.workload_identity_provider }}
+        service_account: ${{ inputs.service_account }}
+
+    - name: どの権限で動いているかを記録する
+      shell: bash
+      run: |
+        # 「誰として成功したか」を先に出す。ここを見ずに権限を語らない（CLAUDE.md）
+        curl -sS "https://oauth2.googleapis.com/tokeninfo?access_token=$(gcloud auth print-access-token)" \
+          | python -c 'import json,sys; print("SA:", json.load(sys.stdin).get("email"))'
+
+    - name: ETL を実行する
+      shell: bash
+      env:
+        APP_ENV: ${{ inputs.target }}
+        GCP_PROJECT_ID: ${{ inputs.project_id }}
+      run: python src/etl_to_bq.py
+
+    - name: PROPERTY GRAPH を作り直す
+      shell: bash
+      env:
+        APP_ENV: ${{ inputs.target }}
+        GCP_PROJECT_ID: ${{ inputs.project_id }}
+      run: python src/create_graph.py
+
+    - name: グラフを検証する
+      shell: bash
+      env:
+        APP_ENV: ${{ inputs.target }}
+        GCP_PROJECT_ID: ${{ inputs.project_id }}
+      run: python src/verify_graph.py
