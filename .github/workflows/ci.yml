@@ -126,6 +126,12 @@ jobs:
         working-directory: frontend
         run: npm run lint
 
+      # lib/backend.ts の認証分岐は E2E では片側しか通らない（E2E は
+      # BACKEND_REQUIRES_AUTH=false で動くため）。ここで両側を通す（issue #64）。
+      - name: ユニットテスト
+        working-directory: frontend
+        run: npm test
+
       # BACKEND_URL は実行時にCloud Runの環境変数として渡すため、ビルド時は不要
       # （app/page.tsx は force-dynamic にしており、ビルド時にbackendへは接続しない）。
       - name: Build
