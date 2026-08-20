@@ -26,13 +26,37 @@ dev の実測（`scripts/survey_requires_benefit.py`）では、参照 196本の
 
 import re
 
-# 制度名らしい語。「〜手当」「〜給付金」などで終わるまとまり
-BENEFIT_NAME = r"(?P<name>[一-龥ぁ-んァ-ヶ]{2,18}?(?:手当|給付金|助成|医療証|受給者証))"
+# 制度名らしい語。「〜手当」「〜給付金」などで終わるまとまり。
+#
+# **左端を固定する。** 末尾だけを決めて最左一致に任せると、前置きごと名前として取る。
+#
+#   ひとり親家庭の父または母が児童扶養手当の支給を受けているか
+#     → 「ひとり親家庭の父または母が児童扶養手当」を制度名として取っていた（レビューでの指摘）
+#
+# 名前は**漢字かカタカナで始まり、その直前が漢字・カタカナでない**ものに限る。
+# 直前が助詞（ひらがな）や記号なら境界、漢字なら**より長い別の名前の一部**という判定。
+#
+#   により特別児童扶養手当   → 「特別児童扶養手当」（「児童扶養手当」は直前が「別」なので取らない）
+#   が児童扶養手当          → 「児童扶養手当」
+#
+# **名前にひらがなを含めない。** 含めると助詞をまたいで前置きごと取ってしまう
+# （「親家庭の父または母が児童扶養手当」）。「AおよびB」「AまたはB」も、
+# ひらがなで切れることで**2つの名前として別々に取れる**ようになる。
+#
+# **頭から短くしていって一致を探してはいけない。** それをやると「特別児童扶養手当」が
+# 「児童扶養手当」に一致し、この修正で潰した混同が復活する。
+NAME_CORE = r"[一-龥ァ-ヶ]{2,18}?(?:手当|給付金|助成|医療証|受給者証)"
+BENEFIT_NAME = rf"(?<![一-龥ァ-ヶ])(?P<name>{NAME_CORE})"
+
+# 「AおよびB」「AまたはB」のように前提が並ぶ形。**並んだ全部を取る。**
+# 動詞（「を受けている」）は最後の1つにしか付かないので、
+# 名前だけを見ていると先頭側を落とす（レビューでの指摘）。
+CONNECTOR = r"(?:および|及び|または|又は|・|,|，)"
+RECEIVING = r"(?:の支給)?を?(?:受けている|受給している|受給し[てい]|支給を受けて|認定を受けて)"
 
 # その制度を受けていることが条件
-REQUIRES_RE = re.compile(
-    BENEFIT_NAME + r"(?:の支給)?を?(?:受けている|受給している|受給し[てい]|支給を受けて|認定を受けて)"
-)
+REQUIRES_RE = re.compile(rf"(?<![一-龥ァ-ヶ])(?P<names>(?:{NAME_CORE}{CONNECTOR})*{NAME_CORE}){RECEIVING}")
+NAME_IN_LIST_RE = re.compile(rf"(?<![一-龥ァ-ヶ]){NAME_CORE}")
 
 # **受けて「いない」ことが条件。** 肯定とほとんど同じ形をしている。
 EXCLUDES_RE = re.compile(
@@ -46,8 +70,16 @@ NOT_A_NAME_RE = re.compile(r"^(?:過去に|既に|すでに|同じ|本事業|こ
 
 
 def _sentences(text: str):
-    """句点・改行で文に割る。**肯定と否定が同じ制度文に同居する**ため文単位で見る。"""
-    for part in re.split(r"[。\n]", text or ""):
+    """句点・改行で文に割る。**肯定と否定が同じ制度文に同居する**ため文単位で見る。
+
+    **バックスラッシュも区切りに含める。** 元データにはこれを区切りに使っているものがあり
+    （4制度）、割れないと1文になって肯定が否定に巻き込まれる（レビューでの指摘）。
+
+        児童扶養手当の支給を受けているか、同等の所得水準にある方\訓練促進給付金と趣旨を
+        同じくする給付を受給していない方
+          → 割れないと「受給していない」に当たって文ごと捨てられる
+    """
+    for part in re.split(r"[。\n\\]", text or ""):
         part = part.strip()
         if part:
             yield part
@@ -66,11 +98,11 @@ def extract_required_benefit_names(text: str) -> list[str]:
         if EXCLUDES_RE.search(sentence):
             continue
         for m in REQUIRES_RE.finditer(sentence):
-            name = m.group("name")
-            if NOT_A_NAME_RE.search(name):
-                continue
-            if name not in names:
-                names.append(name)
+            for name in NAME_IN_LIST_RE.findall(m.group("names")):
+                if NOT_A_NAME_RE.search(name):
+                    continue
+                if name not in names:
+                    names.append(name)
     return names
 
 

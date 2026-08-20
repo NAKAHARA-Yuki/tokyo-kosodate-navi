@@ -502,6 +502,7 @@ class TestRequiresBenefitEdges:
     def _b(self, title, conditions=None):
         return {
             "area_code": "131067",
+            "area_name": "台東区",
             "effective_min_age_months": None,
             "effective_max_age_months": None,
             "title": title,
@@ -556,6 +557,52 @@ class TestRequiresBenefitEdges:
             "b": self._b("給付金", "児童扶養手当の支給を受けている方"),
         }
         assert self._edges(benefits) == []
+
+    def test_前置きごと名前として取らない(self):
+        """**左端を固定する。** 末尾だけ決めて最左一致に任せると前置きを飲み込む。
+
+        「ひとり親家庭の父または母が児童扶養手当」を名前として扱っていたため、
+        同じ自治体に児童扶養手当があるのにエッジが引けていなかった（レビューでの指摘）。
+        """
+        benefits = {
+            "a": self._b("児童扶養手当"),
+            "b": self._b(
+                "ひとり親家庭高等学校卒業程度認定試験合格支援事業",
+                "ひとり親家庭の父または母が児童扶養手当の支給を受けているか、同等の所得水準にある方",
+            ),
+        }
+        edges = self._edges(benefits)
+        assert len(edges) == 1
+        assert (edges[0]["from_benefit_id"], edges[0]["to_benefit_id"]) == ("a", "b")
+
+    def test_並んだ前提を全部取る(self):
+        """「AおよびB」は動詞が最後にしか付かないので、名前だけ見ると先頭側を落とす。"""
+        benefits = {
+            "a": self._b("児童扶養手当"),
+            "b": self._b("特別児童扶養手当"),
+            "c": self._b("給付金", "児童扶養手当および特別児童扶養手当を受給している方"),
+        }
+        assert {e["from_benefit_id"] for e in self._edges(benefits)} == {"a", "b"}
+
+    def test_自治体名が頭に付く形も引く(self):
+        """`title` 側には自治体名が付いていない。"""
+        benefits = {
+            "a": {**self._b("児童育成手当"), "area_name": "中央区"},
+            "b": {**self._b("給付金", "中央区児童育成手当を受けている方"), "area_name": "中央区"},
+        }
+        assert len(self._edges(benefits)) == 1
+
+    def test_バックスラッシュ区切りでも文に割れる(self):
+        """元データにはこれを区切りに使うものがある。割れないと肯定が否定に巻き込まれる。"""
+        benefits = {
+            "a": self._b("児童扶養手当"),
+            "b": self._b(
+                "ひとり親家庭高等職業訓練促進給付金等",
+                "児童扶養手当の支給を受けているか、同等の所得水準にある方"
+                "\\訓練促進給付金と趣旨を同じくする給付を受給していない方",
+            ),
+        }
+        assert len(self._edges(benefits)) == 1
 
     def test_前提が同じ自治体に無ければ引かない(self):
         """引けない分は条件原文の提示に倒す（#63）。誤ったエッジを作らない。"""

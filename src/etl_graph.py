@@ -339,9 +339,16 @@ def build_benefit_edges(benefits: dict, benefit_docs: dict):
         for dst in ids:
             row = benefits[dst]
             text = f"{row.get('conditions_text') or ''} {row.get('target_persons_text') or ''}"
+            area_name = row.get("area_name") or ""
             for name in extract_required_benefit_names(text):
+                # 「中央区児童育成手当」のように自治体名が頭に付く形がある。
+                # `title` 側には付いていないので、外した形でも引く（レビューでの指摘）。
+                candidates = {name}
+                if area_name and name.startswith(area_name):
+                    candidates.add(name[len(area_name) :])
                 for src in ids:
-                    if src == dst or not title_refers_to(benefits[src].get("title"), name):
+                    title = benefits[src].get("title")
+                    if src == dst or not any(title_refers_to(title, c) for c in candidates if len(c) >= 3):
                         continue
                     add_edge(src, dst, "REQUIRES_BENEFIT", f"条件に「{name}を受けている」とある")
 
