@@ -121,6 +121,27 @@ def _sentences(text: str) -> list[str]:
     return [s for s in re.split(r"[。\n\r]+|(?=・)", text) if s.strip()]
 
 
+def _evidence_around(sentence: str, start: int, end: int, width: int = 60) -> str:
+    """**根拠になっている箇所の前後**を切り出す。
+
+    文頭から120字で切ると、表組みの長い行では**根拠の金額が窓の外に落ちる**。
+    `income_evidence` は抽出の根拠を確かめるための列なので、
+    根拠そのものが入っていないと役に立たない（レビューで実例2件）。
+
+        月の途中で生活保護法による保護の適用を受けたとき,その世帯の収入額、資産等が…
+        ← 77,101円 が入っていない
+    """
+    text = sentence.strip()
+    left = max(0, start - width)
+    right = min(len(text), end + width)
+    fragment = text[left:right].strip()
+    if left > 0:
+        fragment = "…" + fragment
+    if right < len(text):
+        fragment = fragment + "…"
+    return fragment
+
+
 def _extract_threshold(text: str) -> IncomeCondition | None:
     """本文に書かれた金額のしきい値を拾う。
 
@@ -149,7 +170,7 @@ def _extract_threshold(text: str) -> IncomeCondition | None:
                     max_inclusive=not re.match(rf"\s*(?:{UPPER_EXCLUSIVE})", near),
                     basis=basis,
                     rule="threshold_upper",
-                    evidence=sentence.strip()[:120],
+                    evidence=_evidence_around(sentence, m.start(), m.end()),
                 )
             # 「46万円以上の場合は対象外」は上限。除外語が無ければ向きが決まらないので取らない
             if re.match(rf"\s*(?:{LOWER})", near) and re.search(EXCLUDE, tail):
@@ -159,7 +180,7 @@ def _extract_threshold(text: str) -> IncomeCondition | None:
                     max_inclusive=not re.match(rf"\s*(?:{LOWER_EXCLUDES_BOUNDARY})", near),
                     basis=basis,
                     rule="threshold_lower_excluded",
-                    evidence=sentence.strip()[:120],
+                    evidence=_evidence_around(sentence, m.start(), m.end()),
                 )
     return None
 
