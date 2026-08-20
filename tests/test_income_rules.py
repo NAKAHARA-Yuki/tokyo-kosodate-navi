@@ -43,6 +43,34 @@ class TestThreshold:
         assert got.max_yen == 460_000
         assert got.rule == "threshold_lower_excluded"
 
+    def test_境界を含むかどうかを持つ(self):
+        """**「未満」と「以下」は境界ちょうどの人の扱いが逆になる。**
+
+        77,100円 や 235,000円 は国の基準額そのもので、ちょうどの人は実在する。
+        `max_yen` だけを見て「この額まで対象」と読むと、
+        「対象外なのに対象と出す」（このモジュールが最も避けたい向き）になる。
+        レビューで 143件中 77件がこの状態だと指摘された。
+        """
+        inclusive = extract_income_condition("総所得金額の合計が800万円以下であること")
+        assert (inclusive.max_yen, inclusive.max_inclusive) == (8_000_000, True)
+
+        exclusive = extract_income_condition("年収360万円未満相当の世帯")
+        assert (exclusive.max_yen, exclusive.max_inclusive) == (3_600_000, False)
+
+    def test_除外の文脈では境界が反転する(self):
+        """「X以上は対象外」なら X は対象外、「X を超えると対象外」なら X は対象。"""
+        at_or_above = extract_income_condition("所得割額が23万5千円以上の世帯の方は、対象外となります")
+        assert (at_or_above.max_yen, at_or_above.max_inclusive) == (235_000, False)
+
+        above = extract_income_condition("所得が460万円を超える場合は支給されません")
+        assert (above.max_yen, above.max_inclusive) == (4_600_000, True)
+
+    def test_しきい値が無ければ境界も持たない(self):
+        """`None` は「未満」ではなく「しきい値そのものが無い」。取り違えると全員が対象になる。"""
+        got = extract_income_condition("住民税非課税世帯の方")
+        assert got.max_yen is None
+        assert got.max_inclusive is None
+
     def test_以上だけでは向きが決まらないので取らない(self):
         # 「所得が100万円以上の方」は対象なのか対象外なのか本文からは決まらない
         got = extract_income_condition("世帯の所得が100万円以上の方")

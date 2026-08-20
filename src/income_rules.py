@@ -30,9 +30,19 @@ INCOME_WORD = r"所得割額?|所得金額|所得額|所得|課税標準額|総�
 MONEY = r"(?P<money>[0-9][0-9,]*(?:億)?(?:[0-9,]*万)?(?:[0-9,]*千)?[0-9,]*\s*円)"
 
 # 上限を意味する比較語。これが付いていれば「その額まで対象」と読める
-UPPER = r"未満|以下|を?超えない|を?こえない|以内"
-# 下限を意味する比較語。単体では向きが決まらない（後述）
-LOWER = r"以上|を?超える|を?こえる|超|を?上回る"
+# **境界を含むかどうかで分ける。** 「23万5千円未満」と「23万5千円以下」は
+# 235,000円ちょうどの人の扱いが逆になる。77,100円や235,000円は国の基準額そのもので、
+# ちょうどの人は実在するため、1円の差でも「対象外なのに対象と出す」向きの誤りになる。
+UPPER_INCLUSIVE = r"以下|を?超えない|を?こえない|以内"
+UPPER_EXCLUSIVE = r"未満"
+UPPER = rf"{UPPER_INCLUSIVE}|{UPPER_EXCLUSIVE}"
+# 下限を意味する比較語。単体では向きが決まらない（後述）。
+# **除外の文脈では上限になり、境界が反転する。**
+#   「46万円以上は対象外」   → 対象は 46万円**未満**（境界を含まない）
+#   「46万円を超えると対象外」 → 対象は 46万円**以下**（境界を含む）
+LOWER_EXCLUDES_BOUNDARY = r"以上"
+LOWER_KEEPS_BOUNDARY = r"を?超える|を?こえる|を?上回る|超"
+LOWER = rf"{LOWER_EXCLUDES_BOUNDARY}|{LOWER_KEEPS_BOUNDARY}"
 
 # 対象から外すことを示す語
 EXCLUDE = r"対象外|対象となりません|対象になりません|除く|除き|除いた|支給されません|支給しません"
@@ -55,6 +65,9 @@ class IncomeCondition:
     """抽出できた所得条件。抽出できなかった項目は None / False のままにする。"""
 
     max_yen: int | None = None
+    # `max_yen` ちょうどの人が対象かどうか。True なら「以下」、False なら「未満」。
+    # **しきい値だけでは判定できない。** 国の基準額（77,100円など）ちょうどの人は実在する。
+    max_inclusive: bool | None = None
     basis: str | None = None  # income / income_tax / tax_levy / salary
     requires_non_taxable: bool = False  # 住民税非課税であることが要件
     requires_taxable: bool = False  # 逆に課税世帯であることが要件（保育料の多子軽減など）
@@ -133,6 +146,7 @@ def _extract_threshold(text: str) -> IncomeCondition | None:
             if re.match(rf"\s*(?:{UPPER})", near):
                 return IncomeCondition(
                     max_yen=yen,
+                    max_inclusive=not re.match(rf"\s*(?:{UPPER_EXCLUSIVE})", near),
                     basis=basis,
                     rule="threshold_upper",
                     evidence=sentence.strip()[:120],
@@ -141,6 +155,8 @@ def _extract_threshold(text: str) -> IncomeCondition | None:
             if re.match(rf"\s*(?:{LOWER})", near) and re.search(EXCLUDE, tail):
                 return IncomeCondition(
                     max_yen=yen,
+                    # 「以上が対象外」なら境界は対象外、「超えると対象外」なら境界は対象
+                    max_inclusive=not re.match(rf"\s*(?:{LOWER_EXCLUDES_BOUNDARY})", near),
                     basis=basis,
                     rule="threshold_lower_excluded",
                     evidence=sentence.strip()[:120],

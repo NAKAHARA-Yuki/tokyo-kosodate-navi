@@ -181,6 +181,9 @@ def build_benefit_row(rec: dict, benefit_id: str) -> dict:
         "target_persons_text": target_persons_text,
         # 本文から読み取れた所得条件。読み取れなければ NULL / False のまま
         "income_max_yen": income.max_yen if income else None,
+        # しきい値ちょうどの人が対象かどうか。**None はしきい値そのものが無いという意味**で、
+        # False（＝未満）とは違う。判定に使うときは NULL を「対象」に倒さないこと。
+        "income_max_inclusive": income.max_inclusive if income else None,
         # しきい値が何の額か（income / income_tax / tax_levy / salary）。
         # 所得・所得税額・所得割額は別の数字なので、揃えずに比較してはいけない
         "income_basis": income.basis if income else None,

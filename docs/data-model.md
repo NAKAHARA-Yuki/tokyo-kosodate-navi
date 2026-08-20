@@ -82,6 +82,36 @@ PROPERTY GRAPH: `kosodate_graph`
 | `is_free` | BOOL | 無料の制度 |
 | `cost_text` / `monetary_support_text` / `materially_support_text` | STRING | 費用・助成額。**数値化していない**（書式が制度ごとに違い、誤った金額を断定するリスクがあるため原文保持） |
 
+### 所得条件（`src/income_rules.py`、issue #76）
+
+条件文から読み取れたものだけ入る。**読み取れなかったものは NULL / false のままで、
+`has_free_text_conditions` として条件原文を見せる**（#63）。
+
+| カラム | 型 | 備考 |
+|---|---|---|
+| `income_max_yen` | INT64 | 所得の上限（円）。143件 |
+| `income_max_inclusive` | BOOL | **その額ちょうどが対象か。** true=「以下」/ false=「未満」。**NULL はしきい値が無いという意味**で false とは違う |
+| `income_basis` | STRING | しきい値が**何の額**か。`income` / `income_tax` / `tax_levy` / `salary` |
+| `requires_non_taxable` / `requires_taxable` | BOOL | 住民税の非課税／課税が要件（172件 / —） |
+| `requires_welfare` / `excludes_welfare` | BOOL | 生活保護の受給が要件（157件）／受給者は対象外（37件） |
+| `income_rule` | STRING | どのルールで抽出したか（`age_inference_rule` と同じ役割） |
+| `income_evidence` | STRING | **抽出元の文。判定の根拠であって表示用ではない** |
+
+> ⚠️ **`income_basis` を見ずに `income_max_yen` を使わないこと。**
+> 所得・所得税額・所得割額は**まったく別の数字**です。入院助産の「所得税額 8,400円以下」を
+> 所得と取り違えると、ほぼ全員が対象外になります。
+>
+> ⚠️ **`income_max_inclusive` を見ずに境界を判定しないこと。**
+> `77,100円` や `235,000円` は国の基準額そのもので、**ちょうどの人は実在します。**
+> 143件のうち **79件は境界を含みません**（「未満」「以上は対象外」）。
+>
+> **`income_evidence` を画面に出さないこと。** 抽出の根拠として残しているだけで、
+> 文の途中で切れています（120字で打ち切り）。利用者に見せるなら `conditions_text` を使います。
+
+しきい値が本文に無いものが 49.0% あります（額が別表・別ページにある）。
+**抽出方法の問題ではなく、正規表現でも LLM でも取り出せません。**
+詳細は [docs/income-conditions.md](income-conditions.md)。
+
 ### 手続き・問い合わせ
 
 `procedure_method` / `procedure_counter` / `electronic_submission`（BOOL、1,179件が可）/

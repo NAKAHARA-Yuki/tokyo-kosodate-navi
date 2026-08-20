@@ -27,6 +27,7 @@ BENEFITS_EXPLICIT_FIELDS = [
     bigquery.SchemaField("effective_max_age_months", "INT64"),
     # 所得条件。本文から読み取れたものだけ入る（src/income_rules.py、issue #76）
     bigquery.SchemaField("income_max_yen", "INT64"),
+    bigquery.SchemaField("income_max_inclusive", "BOOL"),
     bigquery.SchemaField("institution_type", "INT64"),
     bigquery.SchemaField("class_code", "INT64"),
     bigquery.SchemaField("update_date", "DATE"),
