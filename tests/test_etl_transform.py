@@ -6,8 +6,13 @@
 
 import pytest
 
-from etl_documents import canonical_document_name, looks_like_document, split_belongings
-from etl_graph import build_benefit_edges
+from etl_documents import (
+    canonical_document_name,
+    looks_like_document,
+    split_belongings,
+    strip_decorations,
+)
+from etl_graph import build_benefit_edges, transform
 from etl_normalize import extract_links, normalize_date, normalize_time, normalize_zip
 from etl_statuses import _clean_codes, compute_age_bounds
 
@@ -253,6 +258,139 @@ class TestLooksLikeDocument:
     )
     def test_rejects_prose(self, name):
         assert looks_like_document(name) is False
+
+
+class TestRejectsNonDocuments:
+    """書類名でないものをノードにしない（issue #112）。
+
+    必要書類欄には書類名以外が大量に混ざる。実データ 9,369件のうち
+    **47.9% が `is_probable_document=false`** で、残った 4,880件の中にも
+    表組みの断片やリンクの文言が 260件あった。
+
+    これらがノードになると、詳細ページの「必要な書類」に
+    `|求職中|求職活動に関する申立書（PDF 310KB）|` のようなものが並ぶ。
+    """
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "|求職中|求職活動に関する申立書（PDF 310KB）|",  # 表組みの断片
+            "|1|申請書（PDF形式：52KB）|||",
+            "委任状はこちら",  # リンクの文言
+            "各種様式はこちら",
+            "本人確認ができる書類（外部サイトへリンク）",
+            "新宿区で住民税が課税されている場合には、公簿により確認をしますので、",  # 文の断片
+            "ただし、受診者の健康保険証で被保険者本人が確認できれば、",  # 前の文の続き
+        ],
+    )
+    def test_rejects(self, name):
+        assert looks_like_document(name) is False, f"{name!r} を書類として扱っている"
+
+    @pytest.mark.parametrize(
+        "name",
+        ["母子健康手帳", "委任状（PDF：30KB）", "申請者及び児童の戸籍謄本", "マイナンバーカード"],
+    )
+    def test_keeps_real_documents(self, name):
+        """飾りが付いていても書類名は落とさない。"""
+        assert looks_like_document(name) is True, f"{name!r} を落としている"
+
+    def test_length_is_checked_after_stripping_decorations(self):
+        """**長さは飾りを外してから見る。**
+
+        元の文字列で測ると `（PDF：98KB）` `新しいウィンドウで開きます` が字数を押し上げ、
+        40字の足切りに正当な申請書が引っかかる（実データで50件。うち47件は申請書等）。
+        余計に落とせる非書類は3件だけで、代償に合わない。
+        """
+        name = "北区ベビーシッター利用支援事業（一時預かり利用支援）補助金交付申請書兼交付請求書（PDF：98KB）"
+        assert len(name) > 40, "飾り込みでは40字を超える前提のテスト"
+        assert looks_like_document(name) is True
+
+    def test_link_intro_is_not_a_document(self):
+        """長さの足切りを緩めた分、リンクの導入句はここで落とす。
+
+        実データでの巻き添えは0件（この規則で落ちるのはこの1件だけ）。
+        """
+        name = "ダウンロードは江東区ベビーシッター利用内訳表（PDF：674KB）（別ウィンドウで開きます）"
+        assert looks_like_document(name) is False
+
+    def test_sentence_in_parentheses_is_accepted_knowingly(self):
+        """**「。）」で終わるものは落とさない。承知のうえで通している。**
+
+        落とせば `（質問票英語版…。）` のような文を1件消せるが、実データでは
+        `住民票（申請日前3か月以内に発行された、マイナンバーの記載がないもの。）`
+        `診断書（申請日前3か月以内に発行されたもの。）` など**書類15件が巻き添えになる**。
+        ちょうど ac6272f で拾えるようにしたものが再び落ちる形になるため採用しない。
+        """
+        assert (
+            looks_like_document("住民票（申請日前3か月以内に発行された、マイナンバーの記載がないもの。）")
+            is True
+        )
+        assert looks_like_document("診断書（申請日前3か月以内に発行されたもの。）") is True
+
+    def test_punctuation_is_checked_before_stripping(self):
+        """句読点は外す前に見る。strip_decorations が末尾の読点を落とすため。"""
+        assert looks_like_document("入園申込みに必要な書類一式については、子ども育成課、") is False
+
+
+class TestDocumentJudgementInThePipeline:
+    """**ETL を通した結果**で判定を確かめる（issue #112 / #120）。
+
+    `looks_like_document()` を直接呼ぶテストだけでは足りない。実際の ETL は
+    `canonical_document_name()` を経由するため、**関数単体では正しいのに
+    実際の経路では効かない**ということが起きる。
+
+    実際に起きた: `looks_like_document(canonical_doc)` を渡していたため、
+    `canonical_document_name` の中の `strip_decorations` が飾りと末尾の読点を
+    先に外してしまい、「長さ・句読点は元の文字列で見る」が無効になっていた
+    （レビューで指摘されるまで気づけなかった）。
+    """
+
+    def build(self, doc_text: str):
+        result = transform(
+            [
+                {
+                    "basicInformation": {"psid": "psid-1", "canonicalName": "テスト制度"},
+                    "必要書類": doc_text,
+                }
+            ]
+        )
+        return result["documents"]
+
+    @pytest.mark.parametrize(
+        "doc_text",
+        [
+            # 飾りを外すと40字以内に収まるが、生では超える
+            "ダウンロードは江東区ベビーシッター利用支援事業補助金交付申請書兼口座振替依頼書（PDF：450KB）",
+            # strip_decorations が末尾の読点を落とすので、外した後だと文に見えない
+            "入園申込みに必要な書類一式については、子ども育成課、",
+        ],
+    )
+    def test_rejected_through_the_real_path(self, doc_text):
+        docs = self.build(doc_text)
+        assert len(docs) == 1
+        assert bool(docs.iloc[0]["is_probable_document"]) is False, (
+            f"ETL 経路では書類として通ってしまっている: {docs.iloc[0]['doc_name']!r}"
+        )
+
+    def test_real_documents_survive_the_real_path(self):
+        """落としてはいけない側も ETL 経路で確認する。"""
+        docs = self.build("母子健康手帳\n・委任状（PDF：30KB）")
+        names = list(docs["doc_name"])
+        assert all(bool(x) for x in docs["is_probable_document"]), f"書類を落としている: {names}"
+
+
+class TestStripDecorations:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("医療証交付申請書 （PDF 117.1KB）新しいウィンドウで開きます", "医療証交付申請書"),
+            ("委任状（PDF：30KB）", "委任状"),
+            ("母子健康手帳", "母子健康手帳"),
+        ],
+    )
+    def test_strips(self, raw, expected):
+        """ファイルサイズ違いで同じ書類が別ノードに割れるのを防ぐ（実データで11種類）。"""
+        assert strip_decorations(raw) == expected
 
 
 class TestCanonicalDocumentName:

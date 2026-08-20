@@ -44,6 +44,30 @@ jobs:
       - name: Test (pytest)
         run: pytest tests
 
+  lock:
+    name: 依存ロックの整合
+    runs-on: ubuntu-latest
+    # **Dependabot は `app/requirements.in` だけを書き換える。**
+    # 本番イメージはロックからしか入れないので（ADR 0007 / CLAUDE.md）、
+    # ロックを再生成しないままマージすると **prod のイメージは古いまま**になる。
+    # しかも他の CI は緑のままなので気づけない（issue #136。実際に #129 / #132 で起きた）。
+    steps:
+      - uses: actions/checkout@v7
+
+      # **本番と同じ python:3.12-slim の中で解決する。** ロックは解決した Python の
+      # バージョンに紐づくため、別のバージョンで作ると本番で入らないロックになる
+      # （Makefile の `lock` ターゲットと同じ理由）。
+      # **`make lock` とまったく同じコマンドにすること。** フラグが1つ違うだけで
+      # 差分が出て、正しいロックなのに落ちる（`--no-strip-extras` が無いと
+      # `uvicorn[standard]` が `uvicorn` になる）。
+      - name: ロックを再生成して差分が出ないことを確認
+        run: |
+          docker run --rm -v "$PWD/app:/w" -w /w python:3.12-slim sh -c 'pip install -q pip-tools && pip-compile --quiet --no-strip-extras --generate-hashes --output-file requirements.lock requirements.in'
+          if ! git diff --exit-code app/requirements.lock; then
+            echo "::error file=app/requirements.lock::app/requirements.in を変えたらロックの再生成が要ります。'make lock' を実行して差分をコミットしてください（本番イメージはロックからしか入れないため、これが無いと prod に反映されません）"
+            exit 1
+          fi
+
   e2e:
     name: E2E (stub)
     runs-on: ubuntu-latest

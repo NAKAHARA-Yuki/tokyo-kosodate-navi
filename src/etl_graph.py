@@ -410,7 +410,11 @@ def transform(records):
                     "doc_id": doc_id,
                     "doc_name": canonical_doc,
                     "original_name": doc_plain,
-                    "is_probable_document": looks_like_document(canonical_doc),
+                    # **生の文字列を渡す。** canonical_document_name は
+                    # strip_decorations を通しており、飾りも末尾の読点も外れている。
+                    # そちらを渡すと looks_like_document の中で
+                    # 「長さ・句読点は元の文字列で見る」が効かなくなる（レビューで指摘）。
+                    "is_probable_document": looks_like_document(doc_plain),
                     "doc_url": doc_links[0]["uri"] if doc_links else None,
                 },
             )
