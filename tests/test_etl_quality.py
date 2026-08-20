@@ -13,6 +13,7 @@ import pytest
 from etl_quality import (
     MAX_ROW_DECREASE_RATIO,
     QualityCheckError,
+    age_contradictions,
     check_tables,
     run_quality_checks,
 )
@@ -166,3 +167,58 @@ class TestRunQualityChecks:
 
     def test_passes_silently_when_healthy(self):
         run_quality_checks(self._FakeClient(), "proj", healthy_tables())
+
+
+class TestAgeContradictions:
+    """**元データの年齢欄が制度名と食い違う**ものを見つける（issue #114）。
+
+    ADR 0002 は `explicit` を最優先すると決めており、その前提は
+    「元データの年齢欄は正しい」こと。実データではこれが成り立たない。
+
+    `effective_*` は `explicit` をそのまま使うので、誤った年齢欄が判定に入る。
+    三鷹市の「3～4カ月児健康診査」は年齢欄が 36〜71（＝3〜5歳）で、
+    **0歳の子に出ず、3〜5歳の子に出る。**
+    """
+
+    def frame(self, title: str, lo, hi) -> pd.DataFrame:
+        return pd.DataFrame(
+            {"title": [title], "min_age_months": [lo], "max_age_months": [hi], "area_name": ["某市"]}
+        )
+
+    def test_月と歳を取り違えた年齢欄を見つける(self):
+        """実データ（三鷹市）。「カ月」を「歳」として登録している。"""
+        found = age_contradictions(self.frame("3～4カ月児健康診査", 36, 71))
+        assert len(found) == 1
+        assert "3～4カ月児健康診査" in found[0]
+        assert "年齢欄=36〜71" in found[0]
+
+    def test_歳を月として登録したものも見つける(self):
+        """実データ（青梅市）。「5歳児」の年齢欄が 5〜6 か月になっている。"""
+        assert len(age_contradictions(self.frame("5歳児虫歯予防教室", 5, 6))) == 1
+
+    def test_正しいものは挙げない(self):
+        assert age_contradictions(self.frame("3～4か月児健康診査", 3, 4)) == []
+        assert age_contradictions(self.frame("3歳児健康診査", 36, 47)) == []
+
+    def test_一部でも重なっていれば挙げない(self):
+        """**完全一致は求めない。** 境界のずれ（18→19 など）まで挙げると数が多すぎる。"""
+        assert age_contradictions(self.frame("1歳6か月児健康診査", 19, 23)) == []
+
+    def test_年齢欄が無いものは見ない(self):
+        """年齢欄が無ければ推定に回るので、ここでの矛盾は起きない。"""
+        assert age_contradictions(self.frame("3歳児健康診査", None, None)) == []
+
+    def test_制度名から年齢が読めなければ見ない(self):
+        assert age_contradictions(self.frame("子育て相談窓口", 36, 47)) == []
+
+    def test_片側だけの範囲も扱える(self):
+        """上限だけ・下限だけの年齢欄でも落ちないこと。"""
+        assert len(age_contradictions(self.frame("新生児誕生祝金", 12, None))) == 1
+
+    def test_ロードは止めない(self):
+        """**報告であって停止条件ではない。** 元データの誤りで ETL を止める理由はない。"""
+        tables = healthy_tables()
+        tables["benefits"].loc[0, "title"] = "3～4カ月児健康診査"
+        tables["benefits"]["min_age_months"] = 36
+        tables["benefits"]["max_age_months"] = 71
+        assert check_tables(tables) == []
