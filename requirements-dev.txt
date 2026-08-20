@@ -11,7 +11,7 @@
 pytest>=9.1.1,<10
 httpx>=0.28.1,<1             # FastAPI TestClient が使う
 ruff>=0.16.1,<0.17           # 0.x はマイナーで規則が変わるのでマイナーで止める
-pytest-playwright>=0.8.0,<1  # E2E。playwright 本体も依存として入る
+pytest-playwright>=0.9.0,<1  # E2E。playwright 本体も依存として入る
 # アクセシビリティの自動チェック（docs/adr/0016）。axe-core を同梱しており、
 # 実行時に外部から取りに行かない。
 axe-playwright-python>=0.1.8,<1
