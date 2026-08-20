@@ -396,3 +396,61 @@ class TestNormalization:
         base = extract_age_range("生後4か月まで")
         assert extract_age_range("生後4ヶ月まで") == base
         assert extract_age_range("生後4ヵ月まで") == base
+
+
+class TestMultipleTargetGroups:
+    """**1つの対象者欄に複数の対象区分が並ぶとき、最初の1つだけを採らない**（PR #128 のレビュー）。
+
+    規則は最初に一致したもので打ち切るため、区分が並んでいると残りを捨てる。
+    3件とも「main より狭くなる」＝「対象なのに出ない」向きだった。
+    """
+
+    def test_箇条書きで並ぶ区分は全部の和を取る(self):
+        """MR接種もれ。(2) だけを採ると 13〜19歳が丸ごと落ちる。"""
+        lo, hi, rule = extract_age_range(
+            "以下のいずれかに該当する方 "
+            "（2）MR2期未接種で、12歳となる日の属する年度の末日までの方 "
+            "（3）MR2期未接種で、13歳となる日の属する年度の初日から20歳の誕生日の前日までの方"
+        )
+        assert rule == "union_of_clauses"
+        assert (lo, hi) == (0, months(20) - 1)
+
+    def test_括弧書きの例外では和を取らない(self):
+        """**「（障害がある場合は20歳未満）」は同じ区分の中の例外。**
+
+        ここで和を取ると本則（18歳年度末）が例外に引きずられて広がる。
+        箇条書きのマーカーがあるものだけを対象にしているのはこのため。
+        """
+        lo, hi, rule = extract_age_range(
+            "18歳に達する年度末まで（政令で定める程度の障害がある場合は20歳未満）の児童"
+        )
+        assert rule == "stage_until_fiscal_year_end"
+        assert (lo, hi) == (0, months(18, 11))
+
+    def test_歳の後ろのか月を子の月齢として拾わない(self):
+        """「11か月～1歳4か月頃のお子さん」が 4〜6か月になると、**対象が一人も入らない。**"""
+        assert extract_age_range("区内在住で11か月～1歳4か月頃のお子さんの保護者") is None
+
+    def test_年度末が下限として使われている文からは取らない(self):
+        """**年度末は上限とは限らない。**
+
+        「1歳になった年度末**から**1か月まで」は補助**期間**の話で、対象年齢ではない。
+        0〜23か月と読むと、満3歳児向けの制度が 0〜1歳になる。
+        """
+        assert (
+            extract_age_range(
+                "育休対象の子が1歳になった年度末から1か月（4月30日）までが補助対象期間となります"
+            )
+            is None
+        )
+
+    def test_年度末が上限のときは取る(self):
+        """「まで」「以前」が付いていれば上限。間に日付が挟まっても拾う。"""
+        for text in [
+            "18歳に到達した年度末までの児童",
+            "18歳に達した年度末（3月31日）までの児童",
+            "18歳に到達した年度の末日以前の児童",
+        ]:
+            lo, hi, rule = extract_age_range(text)
+            assert rule == "stage_until_fiscal_year_end", text
+            assert (lo, hi) == (0, months(18, 11))
