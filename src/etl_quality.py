@@ -23,6 +23,8 @@ from config import DATASET_ID
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
 
+from age_rules import extract_age_range
+
 # 件数がこの割合を超えて減ったら止める。
 # 元データの制度が一度に3割も消えることは運用上考えにくく、
 # 消えたとすれば取得か整形の失敗を疑うべき、という基準。
@@ -62,6 +64,12 @@ MAX_UNKNOWN_AGE_RATIO = 0.45
 
 # 自治体数の下限。実測 63。区市町村の統廃合があっても急には減らない。
 MIN_AREA_COUNT = 55
+
+
+# 制度名と年齢欄の矛盾を、ログに何件まで並べるか。**しきい値ではない。**
+# これを超えた分は「他N件」に畳むだけで、挙動は何も変わらない（件数で警告を強めたりしない）。
+# 実測は 10件（dev）なので、いまは全件出る。
+MAX_CONTRADICTIONS_SHOWN = 30
 
 
 class QualityCheckError(Exception):
@@ -153,6 +161,60 @@ def check_tables(tables: dict, previous_counts: dict | None = None) -> list[str]
     return problems
 
 
+def _overlaps(lo1, hi1, lo2, hi2) -> bool:
+    """2つの年齢範囲が重なるか。None は「制限なし」として扱う。"""
+    lo1 = lo1 if lo1 is not None else -(10**9)
+    hi1 = hi1 if hi1 is not None else 10**9
+    lo2 = lo2 if lo2 is not None else -(10**9)
+    hi2 = hi2 if hi2 is not None else 10**9
+    return lo1 <= hi2 and lo2 <= hi1
+
+
+def age_contradictions(benefits) -> list[str]:
+    """**元データの年齢欄が、制度名と食い違っているもの**を挙げる（issue #114）。
+
+    ADR 0002 は「明示された年齢（`explicit`）を最優先し、推定で上書きしない」と決めている。
+    その前提は「元データの年齢欄は正しい」ことだが、**実データでは成り立たない**。
+
+        三鷹市「3～4カ月児健康診査」   年齢欄 = 36〜71   ← か月を歳として登録している
+        目黒区「9から10か月児健診」    年齢欄 = 6〜7     ← 概要にも「9か月から10か月児」とある
+        青梅市「5歳児虫歯予防教室」    年齢欄 = 5〜6     ← 歳を月として登録している
+
+    `effective_*` は `explicit` を最優先するので、**誤った年齢欄がそのまま判定に使われる。**
+    三鷹市の例では 0歳の子に3〜4か月児健診が出ず、3〜5歳の子に出る。
+    「対象なのに出ない」と「対象外なのに出る」が同時に起きる。
+
+    **これは報告であって停止条件ではない。** 元データの誤りでこちらの ETL を止める理由はなく、
+    直せるのは自治体だけなので、気づける形にすることが目的（issue #114）。
+    """
+    if benefits is None or len(benefits) == 0:
+        return []
+    needed = {"title", "min_age_months", "max_age_months"}
+    if not needed.issubset(benefits.columns):
+        return []
+
+    found: list[str] = []
+    for row in benefits.itertuples(index=False):
+        lo_col = getattr(row, "min_age_months", None)
+        hi_col = getattr(row, "max_age_months", None)
+        if pd.isna(lo_col) and pd.isna(hi_col):
+            continue  # 年齢欄が無いものは推定に回るので、ここでは見ない
+        result = extract_age_range(getattr(row, "title", None))
+        if not result:
+            continue
+        lo, hi, rule = result
+        lo_col = None if pd.isna(lo_col) else int(lo_col)
+        hi_col = None if pd.isna(hi_col) else int(hi_col)
+        if _overlaps(lo, hi, lo_col, hi_col):
+            continue
+        area = getattr(row, "area_name", "") or ""
+        found.append(
+            f"{area} 「{getattr(row, 'title', '')[:40]}」 "
+            f"制度名={lo}〜{hi}か月（{rule}） / 年齢欄={lo_col}〜{hi_col}か月"
+        )
+    return found
+
+
 def run_quality_checks(client: bigquery.Client, project_id: str, tables: dict) -> None:
     """チェックして、問題があれば QualityCheckError を投げる（ロードは行われない）。"""
     previous = previous_row_counts(client, project_id, tables.keys())
@@ -167,5 +229,18 @@ def run_quality_checks(client: bigquery.Client, project_id: str, tables: dict) -
         raise QualityCheckError(
             f"データ品質チェックに失敗したため、ロードを中止した（{len(problems)}件）:\n{detail}"
         )
+
+    # **止めない指摘。** 元データ側の誤りなので、こちらのロードを妨げる理由がない。
+    contradictions = age_contradictions(tables.get("benefits"))
+    if contradictions:
+        print(
+            f"[quality] ⚠ 制度名と年齢欄が食い違うものが {len(contradictions)} 件（元データ側の問題。"
+            "ロードは止めない。issue #114）",
+            flush=True,
+        )
+        for line in contradictions[:MAX_CONTRADICTIONS_SHOWN]:
+            print(f"  - {line}", flush=True)
+        if len(contradictions) > MAX_CONTRADICTIONS_SHOWN:
+            print(f"  … 他 {len(contradictions) - MAX_CONTRADICTIONS_SHOWN} 件", flush=True)
 
     print(f"[quality] {len(tables)} テーブルすべてが基準を満たした", flush=True)
