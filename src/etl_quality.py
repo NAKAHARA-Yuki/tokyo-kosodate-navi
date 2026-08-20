@@ -66,9 +66,10 @@ MAX_UNKNOWN_AGE_RATIO = 0.45
 MIN_AREA_COUNT = 55
 
 
-# タイトルと年齢欄の矛盾を報告する上限。実測 10件（dev）。
-# **止めるための基準ではない。** ここを超えたら「元データ側で何かが起きた」と気づくための目安。
-MAX_AGE_CONTRADICTIONS = 30
+# 制度名と年齢欄の矛盾を、ログに何件まで並べるか。**しきい値ではない。**
+# これを超えた分は「他N件」に畳むだけで、挙動は何も変わらない（件数で警告を強めたりしない）。
+# 実測は 10件（dev）なので、いまは全件出る。
+MAX_CONTRADICTIONS_SHOWN = 30
 
 
 class QualityCheckError(Exception):
@@ -237,9 +238,9 @@ def run_quality_checks(client: bigquery.Client, project_id: str, tables: dict) -
             "ロードは止めない。issue #114）",
             flush=True,
         )
-        for line in contradictions[:MAX_AGE_CONTRADICTIONS]:
+        for line in contradictions[:MAX_CONTRADICTIONS_SHOWN]:
             print(f"  - {line}", flush=True)
-        if len(contradictions) > MAX_AGE_CONTRADICTIONS:
-            print(f"  … 他 {len(contradictions) - MAX_AGE_CONTRADICTIONS} 件", flush=True)
+        if len(contradictions) > MAX_CONTRADICTIONS_SHOWN:
+            print(f"  … 他 {len(contradictions) - MAX_CONTRADICTIONS_SHOWN} 件", flush=True)
 
     print(f"[quality] {len(tables)} テーブルすべてが基準を満たした", flush=True)
