@@ -13,12 +13,25 @@ name: ETL
 # ⚠️ **この SA は staging と prod にも書き込める。** `bigquery.dataEditor` が
 # プロジェクト単位でしか付かないため、データセット単位では絞れていない。
 # **環境の取り違えを止めているのは権限ではなく、下の `confirm` 入力だけ。**
+#
+# ⚠️ **prod は `v*.*.*` のタグからしか起動できない。** `production` 環境の
+# deployment branch policy がタグだけを許しているため、`main` から起動すると
+# **承認画面すら出ずに3秒で failure になる**（ステップが1つも実行されないので
+# 原因が読み取れない。実際に一度踏んでいる）。
+#
+#   Use workflow from : v0.4.0 のようなタグ   ← Branches ではなく Tags タブ
+#   対象環境           : prod
+#   上書き確認         : prod
+#
+# 「いま main にあるコード」ではなく「リリース済みのタグ」からしか本番データを
+# 置き換えさせない、という制約なので、これは意図された設計。dev と staging は
+# 環境の保護が無いのでブランチから起動できる。
 
 on:
   workflow_dispatch:
     inputs:
       target:
-        description: 対象環境
+        description: 対象環境（prod は v*.*.* のタグから起動すること。main では弾かれる）
         required: true
         type: choice
         options: [dev, staging, prod]
