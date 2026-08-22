@@ -138,9 +138,41 @@ docs(adr): 年齢推定の設計判断を記録
 - **approve が最低1件必要**（2026-08-04 に 0 から変更）。
   GitHub は自己承認を許可しないので、**自分の PR は必ず誰かに見てもらう**ことになる。
   ひとり体制の間は 0 にしていたが、メンバーが増えたので本来の運用に戻した
-- **指摘を直して push すると、それまでの approve は外れる。** 承認をもらった後の
-  修正でも同じなので、push したらレビューを依頼し直すこと
-  （ruleset の `dismiss_stale_reviews_on_push`）
+
+### レビュー依頼は「出したか」ではなく「いま飛んでいるか」で見る
+
+**アサインとレビュー依頼は別物。** アサインは「誰が持っているか」の印で、
+**それだけでは相手の「Review requested」の一覧に載らない。**
+
+```bash
+# PR を出したら必ず両方やる
+gh api -X POST repos/:owner/:repo/issues/<n>/assignees   -f 'assignees[]=<相手>'
+gh api -X POST repos/:owner/:repo/pulls/<n>/requested_reviewers -f 'reviewers[]=<相手>'
+```
+
+**`gh pr edit --add-reviewer` は使えない。** `gh` のトークンが `repo` と `workflow` しか
+持っておらず、GraphQL を使うサブコマンドは `read:org` が無くて落ちる。
+同じ理由で `gh pr list --search "review-requested:@me"` は**エラーにならず0件を返す**ので、
+依頼が無いと誤読する。
+
+- **指摘を直して push したら、その場でレビューを依頼し直す**
+  （ruleset の `dismiss_stale_reviews_on_push` で approve が外れる）。
+  **コメントを書くだけでは足りない。** コメントは「Review requested」の一覧に載らないので、
+  相手から見ると対応済みだと分からない
+- **レビューが提出されると、GitHub はその人への依頼を自動で消す。**
+  つまり `CHANGES_REQUESTED` を受けて直した PR は、**必ず依頼が空になっている**
+
+**溜まっていないかは、出した記憶ではなくこれで確かめる。**
+
+```bash
+for n in $(gh pr list --state open --json number -q '.[].number'); do
+  echo "#$n 依頼: $(gh api repos/:owner/:repo/pulls/$n -q '[.requested_reviewers[].login]|join(",")')"
+done
+```
+
+> **2回とも実害が出ている。** #127 は作成時に依頼を出しておらず**7日間レビューが0件**、
+> #142 / #128 は指摘対応後に依頼し直しておらず、**直したのに止まったまま**だった。
+> どちらも「アサインしてあるから伝わっているはず」と思い込んでいたのが原因。
 - スクリーンショットを貼る（UI 変更時は必須）
 
 ### レビューで必ず見る点
