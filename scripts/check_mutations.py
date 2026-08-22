@@ -9,12 +9,24 @@
     make mutations              # 全部
     python scripts/check_mutations.py --only llm-in-judgement
 
-各変異は「入れたら**落ちるべき**バグ」で、落ちなければ **MISSED**（テストの穴）。
-結果は docs/test-effectiveness.md に記録している。
+各変異は「入れたら**落ちるべき**バグ」。結果は docs/test-effectiveness.md に記録している。
 
-**アンカーが1箇所だけ一致することを必ず確認してから置換する。**
-置換が空振りしたまま「テストが緑だから検出できていない」と誤読した事故があるため
-（PR #111 のレビュー）。一致数が1でなければ、変異を当てずに ANCHOR エラーで止める。
+| 結果 | 意味 |
+|---|---|
+| `DETECTED` | 狙いどおり。**落ちたテストが1件以上ある** |
+| `MISSED` | テストの穴。バグを入れても落ちない |
+| `UNCLEAR` | 落ちたが、変異が原因とは言えない。**検証できていない** |
+| `ANCHOR` | 置換が当たっていない。変異の定義が古い |
+
+**入力側と出力側の両方で「空振り」を弾く。**
+
+- 入力: アンカーが1箇所だけ一致することを確認してから置換する。空振りしたまま
+  「テストが緑だから検出できていない」と誤読した事故があるため（PR #111 のレビュー）
+- 出力: **落ちたテストが1件以上あること**を DETECTED の条件にする。`returncode != 0` だけを
+  見ていたときは、収集エラーで赤い環境だと**変異と無関係に DETECTED になっていた**
+  （PR #146 のレビュー）。変異前に素の状態が緑であることも先に確かめる
+
+**偽の DETECTED は偽の MISSED より危険。** 穴が塞がったように見えて、実際は開いたままになる。
 
 ETL や GCP には一切触らない（テストは BigQuery をモックしている）。
 """
@@ -158,6 +170,44 @@ MUTATIONS = [
 ]
 
 
+def _run_pytest(selection: list[str]):
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", *selection, "-q", "--no-header", "-p", "no:cacheprovider"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=1800,
+    )
+
+
+def _failed_tests(proc) -> list[str]:
+    return [ln.split(" ")[1] for ln in (proc.stdout + proc.stderr).splitlines() if ln.startswith("FAILED")]
+
+
+_baselines: dict[tuple[str, ...], tuple[bool, str]] = {}
+
+
+def baseline_is_green(selection: list[str]) -> tuple[bool, str]:
+    """**変異を当てる前に、素の状態で緑であることを確かめる。**
+
+    赤い状態から始めると、変異と無関係な失敗で `returncode != 0` になり、
+    **検出できていないのに DETECTED と報告してしまう**（PR #146 のレビューで指摘）。
+    アンカーの一致数を確認しているのと同じことを、出力側でもやる。
+
+    同じ選択（`tests` / `e2e`）は1回だけ走らせて使い回す。
+    """
+    key = tuple(selection)
+    if key not in _baselines:
+        proc = _run_pytest(selection)
+        if proc.returncode == 0:
+            _baselines[key] = (True, "")
+        else:
+            failed = _failed_tests(proc)
+            reason = f"{len(failed)}件が失敗" if failed else f"収集エラー等（returncode={proc.returncode}）"
+            _baselines[key] = (False, reason)
+    return _baselines[key]
+
+
 def apply_and_run(mut: dict) -> dict:
     """変異を当ててテストを走らせ、必ず元に戻す。"""
     path = ROOT / mut["file"]
@@ -169,25 +219,31 @@ def apply_and_run(mut: dict) -> dict:
         # 2件以上なら意図しない場所も書き換わる。
         return {"id": mut["id"], "status": "ANCHOR", "detail": f"一致 {hits} 箇所（1であること）"}
 
+    green, why = baseline_is_green(mut["tests"])
+    if not green:
+        return {
+            "id": mut["id"],
+            "status": "UNCLEAR",
+            "detail": f"変異前から赤いので検証できない（{' '.join(mut['tests'])}: {why}）",
+        }
+
     try:
         path.write_text(original.replace(mut["old"], mut["new"]), encoding="utf-8")
-        proc = subprocess.run(
-            [sys.executable, "-m", "pytest", *mut["tests"], "-q", "--no-header", "-p", "no:cacheprovider"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            timeout=1800,
-        )
+        proc = _run_pytest(mut["tests"])
     finally:
         path.write_text(original, encoding="utf-8")
 
-    failed = [ln.split(" ")[1] for ln in (proc.stdout + proc.stderr).splitlines() if ln.startswith("FAILED")]
-    return {
-        "id": mut["id"],
-        "status": "DETECTED" if proc.returncode != 0 else "MISSED",
-        "detail": f"{len(failed)}件が失敗" if failed else "落ちたテストなし",
-        "failed": failed,
-    }
+    failed = _failed_tests(proc)
+    if failed:
+        return {"id": mut["id"], "status": "DETECTED", "detail": f"{len(failed)}件が失敗", "failed": failed}
+    if proc.returncode != 0:
+        # **落ちたが、変異が原因とは言えない。** 「落ちた理由まで見る」を判定側にも効かせる。
+        return {
+            "id": mut["id"],
+            "status": "UNCLEAR",
+            "detail": f"落ちたテストが無いのに returncode={proc.returncode}",
+        }
+    return {"id": mut["id"], "status": "MISSED", "detail": "落ちたテストなし"}
 
 
 def main() -> int:
@@ -209,12 +265,17 @@ def main() -> int:
         for name in result.get("failed", [])[:3]:
             print(f"     {name}")
 
-    missed = [r for r in results if r["status"] != "DETECTED"]
-    print(f"\n検出 {len(results) - len(missed)} / {len(results)}")
-    if missed:
-        print("**捕まえられなかった変異があります。** テストの穴です。")
-        for r in missed:
-            print(f"  {r['status']}  {r['id']}  {r['detail']}")
+    bad = [r for r in results if r["status"] != "DETECTED"]
+    print(f"\n検出 {len(results) - len(bad)} / {len(results)}")
+    if bad:
+        # **UNCLEAR も赤で報告する。** 「検証できていない」を緑にすると、
+        # 穴が塞がったように見えて実際は開いたままになる。
+        print("**検証できていない変異があります。**")
+        print("  MISSED  = テストの穴。バグを入れても落ちない")
+        print("  UNCLEAR = 落ちた理由が変異だと言えない。まず素の状態を緑にすること")
+        print("  ANCHOR  = 置換が当たっていない。変異の定義が古い")
+        for r in bad:
+            print(f"  {r['status']:8} {r['id']}  {r['detail']}")
         return 1
     return 0
 
