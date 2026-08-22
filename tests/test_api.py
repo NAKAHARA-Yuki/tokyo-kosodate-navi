@@ -8,6 +8,7 @@
 from datetime import date
 
 import pytest
+import routers.match as match
 from conftest import FakeQueryJob, FakeRow
 from routers.match import months_between
 
@@ -296,6 +297,78 @@ class TestMatchBenefits:
         item = res.json()["benefits"][0]
         assert item["needs_confirmation"] is True
         assert item["conditions_text"] == "所得制限あり"
+
+
+class TestNextSteps:
+    """「次に繋がる制度」は**根拠の強い順**に返す（issue #145）。
+
+    `benefit_leads_to` のエッジは根拠の強さが違う。`NEXT_STEP`（年齢帯が隣り合っているだけ）は
+    制度としての関係が無く利用者に見せられないが、実データでは全体の 72% を占める。
+    一方 `REQUIRES_BENEFIT`（条件文にそう書いてある）は 2.4% しかない。
+    **順序を付けないと、いちばん見せたいものが上限に達した時点で落ちる。**
+    """
+
+    def match_row(self, **overrides):
+        row = TestMatchBenefits().match_row(**overrides)
+        return row
+
+    def edge_row(self, relation, reason="なぜか"):
+        return {
+            "from_id": "psid-1",
+            "from_title": "児童扶養手当",
+            "to_id": "psid-2",
+            "to_title": "ひとり親家庭高等職業訓練促進給付金",
+            "relation": relation,
+            "reason": reason,
+        }
+
+    def fetch(self, client, bq, edges):
+        # 1本目が match のクエリ、2本目が next_steps のクエリ。
+        bq.set_rows_sequence([self.match_row()], edges)
+        res = client.get("/api/benefits/match?area_code=131067&child_age_months=40")
+        return res.json()
+
+    def test_orders_by_relation_strength(self, client, bq):
+        """`REQUIRES_BENEFIT` が `NEXT_STEP` より先に来る並びを SQL に出すこと。"""
+        self.fetch(client, bq, [self.edge_row("REQUIRES_BENEFIT")])
+        query = bq.last_query
+
+        assert "ORDER BY" in query, query
+        positions = [query.index(f"'{relation}'") for relation in match.RELATION_PRIORITY]
+        assert positions == sorted(positions), f"根拠の強い順になっていません: {query}"
+
+    def test_priority_comes_from_the_constant(self, client, bq, monkeypatch):
+        """**並び順は `RELATION_PRIORITY` から組み立てること。**
+
+        SQL に直書きすると、定数を変えたときにこちらが取り残されて
+        「定数は直したのに並びは変わらない」状態になる。
+        """
+        monkeypatch.setattr(match, "RELATION_PRIORITY", ["SHARED_DOC", "REQUIRES_BENEFIT"])
+        self.fetch(client, bq, [self.edge_row("SHARED_DOC")])
+        query = bq.last_query
+        assert query.index("'SHARED_DOC'") < query.index("'REQUIRES_BENEFIT'"), query
+
+    def test_limit_is_parameterized(self, client, bq):
+        """上限は打ち切り用の安全弁。値をクエリに直書きしない。"""
+        self.fetch(client, bq, [self.edge_row("NEXT_STEP")])
+        assert bq.last_params()["next_steps_limit"] == match.NEXT_STEPS_LIMIT
+
+    def test_reason_is_returned(self, client, bq):
+        """`reason` はそのまま利用者への説明になるので、削らずに返す。"""
+        body = self.fetch(
+            client, bq, [self.edge_row("REQUIRES_BENEFIT", "条件に「児童扶養手当を受けている」とある")]
+        )
+        step = body["next_steps"][0]
+        assert step["relation"] == "REQUIRES_BENEFIT"
+        assert step["reason"] == "条件に「児童扶養手当を受けている」とある"
+        assert step["to_title"] == "ひとり親家庭高等職業訓練促進給付金"
+
+    def test_not_fetched_when_not_requested(self, client, bq):
+        """`include_skill_tree=false` なら2本目のクエリを投げない。"""
+        bq.set_rows([self.match_row()])
+        body = client.get("/api/benefits/match?area_code=131067&include_skill_tree=false").json()
+        assert "next_steps" not in body
+        assert len(bq.queries) == 1, f"余計なクエリが飛んでいます: {bq.queries}"
 
 
 class TestMonthsBetween:
