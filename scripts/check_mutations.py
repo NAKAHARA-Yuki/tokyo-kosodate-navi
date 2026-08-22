@@ -160,6 +160,14 @@ MUTATIONS = [
         "tests": ["tests"],
     },
     {
+        "id": "snapshot-after-load",
+        "why": "退避はロードの前でなければ意味が無い（#160）。後ろに回ると「壊した後」を撮る",
+        "file": "src/etl_to_bq.py",
+        "old": "    snapshot_tables(client, project_id, tables.keys())\n\n    load_tables(client, project_id, tables)",
+        "new": "    load_tables(client, project_id, tables)\n\n    snapshot_tables(client, project_id, tables.keys())",
+        "tests": ["tests"],
+    },
+    {
         "id": "stub-ignores-search-params",
         "why": "E2E のスタブが検索条件を無視して常に成功を返さないこと（#110）",
         "file": "e2e/fake_data.py",

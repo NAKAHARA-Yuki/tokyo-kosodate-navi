@@ -33,6 +33,7 @@ make cov            # 一度も実行されていない経路を探す
 | 所得のしきい値を常に「以下」扱いにする | `TestThreshold::test_境界を含むかどうかを持つ` |
 | 書類名の長さを飾りを外す前に測る | `test_length_is_checked_after_stripping_decorations` |
 | E2E スタブが `area_code` を無視する | `TestAttributeFilter::test_area_filter_narrows_to_that_area` ほか1件 |
+| 退避をロードの**後**に回す | `TestSnapshotHappensBeforeLoad::test_order_is_quality_then_snapshot_then_load` |
 
 ### 検証で見つかった穴（このPRで塞いだ）
 
@@ -98,7 +99,7 @@ swap を食い潰して `npm run build` が終わらなくなっていた。
 
 | モジュール | 中身 | 判断 |
 |---|---|---|
-| `src/etl_to_bq.py` | ETL のエントリポイント | **BigQuery への書き込み経路が丸ごと未実行** |
+| `src/etl_to_bq.py` | ETL のエントリポイント | **BigQuery への書き込み経路が丸ごと未実行**（#152）。<br>ただし**退避→ロードの順序だけ**は `test_etl_snapshot.py` で固定した（#160） |
 | `src/etl_load.py` | データセット作成・テーブルロード | 同上 |
 | `src/etl_schema.py` | テーブルスキーマ定義 | 同上 |
 | `src/create_graph.py` | PROPERTY GRAPH の作成 | 同上 |

@@ -36,6 +36,7 @@ from google.cloud import bigquery  # noqa: E402
 from etl_graph import transform  # noqa: E402
 from etl_load import ensure_dataset, load_tables  # noqa: E402
 from etl_quality import run_quality_checks  # noqa: E402
+from etl_snapshot import snapshot_tables  # noqa: E402
 
 SOURCE_URL = "https://data.storage.data.metro.tokyo.lg.jp/digitalservice/130001_kosodateshienseido_tokyo.json"
 
@@ -79,6 +80,11 @@ def main():
     # 途中で落ちると「benefits だけ新しく statuses は古い」状態が残る。
     # 書く前に落とせばその状態自体を作らずに済む（issue #62）。
     run_quality_checks(client, project_id, tables)
+
+    # 品質チェックを通ったあと、**上書きする直前**に退避する。
+    # チェックで落ちる実行のたびに撮っても意味が無いのと、
+    # 「これから壊す直前の状態」こそが戻したい状態なので（issue #160）。
+    snapshot_tables(client, project_id, tables.keys())
 
     load_tables(client, project_id, tables)
 
