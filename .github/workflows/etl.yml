@@ -5,6 +5,14 @@ name: ETL
 # 手元のコンテナからは取得元（data.storage.data.metro.tokyo.lg.jp）に到達できないため、
 # ETL を回せるのは実質ここだけになる。手動実行のみで、自動では絶対に走らせない
 # （WRITE_TRUNCATE で対象データセットを上書きするため）。
+#
+# 使うのは **ETL 専用の SA**（`kosodate-etl@`）。デプロイ用の SA とは分けている。
+# デプロイ用に BigQuery の書き込み権限を足すと、1つの SA が「Cloud Run のデプロイ」と
+# 「本番データの全置換」の両方を持つことになるため（ADR 0008 の考え方。issue #144）。
+#
+# ⚠️ **この SA は staging と prod にも書き込める。** `bigquery.dataEditor` が
+# プロジェクト単位でしか付かないため、データセット単位では絞れていない。
+# **環境の取り違えを止めているのは権限ではなく、下の `confirm` 入力だけ。**
 
 on:
   workflow_dispatch:
@@ -38,7 +46,7 @@ jobs:
           target: dev
           confirm: ${{ inputs.confirm }}
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          service_account: ${{ secrets.GCP_ETL_SERVICE_ACCOUNT }}
           project_id: ${{ env.GCP_PROJECT_ID }}
 
   etl-staging:
@@ -56,7 +64,7 @@ jobs:
           target: staging
           confirm: ${{ inputs.confirm }}
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          service_account: ${{ secrets.GCP_ETL_SERVICE_ACCOUNT }}
           project_id: ${{ env.GCP_PROJECT_ID }}
 
   etl-prod:
@@ -75,5 +83,5 @@ jobs:
           target: prod
           confirm: ${{ inputs.confirm }}
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          service_account: ${{ secrets.GCP_ETL_SERVICE_ACCOUNT }}
           project_id: ${{ env.GCP_PROJECT_ID }}
