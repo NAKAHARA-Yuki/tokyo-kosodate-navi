@@ -46,10 +46,20 @@ gh api /notifications --jq '.[] | select(.repository.name=="tokyo-kosodate-navi"
 ### 2. レビュー依頼に応える
 
 ```bash
-gh pr list --search "review-requested:@me" --state open
+# 自分に依頼が飛んでいる PR を探す
+for n in $(gh pr list --state open --json number -q '.[].number'); do
+  echo "#$n → $(gh api repos/:owner/:repo/pulls/$n -q '[.requested_reviewers[].login]|join(",")')"
+done
 ```
 
+**`gh pr list --search "review-requested:@me"` は使わない。** このリポジトリの `gh`
+トークンは `repo` と `workflow` しか持っておらず、検索を裏で支える GraphQL が通らない。
+エラーにならず **0件を返す**ので、依頼が無いと誤読する。
+
 必ず PR 上に結果を残す。Approve するか、指摘をコメントに書く。黙って放置しない。
+**approve の操作自体がブロックされている環境がある**（実際にそういうセッションがある）。
+そのときは内容の確認結果をコメントに書き、approve を他の人に頼むこと。
+これは「放置」ではないので、ルール違反にはあたらない。
 観点は CONTRIBUTING.md の「レビューで必ず見る点」。特に次は毎回確認する。
 
 - 判定ロジックに LLM が混入していないか
@@ -64,7 +74,16 @@ gh pr list --search "review-requested:@me" --state open
 
 - コードで応えるか、なぜ直さないかをコメントで返す
 - **直して push すると approve が外れる**（`dismiss_stale_reviews_on_push`）。
-  `gh pr edit <n> --add-reviewer <相手>` でレビューを依頼し直す
+  レビューを依頼し直す。**`gh pr edit --add-reviewer` は上と同じ理由で落ちる**ので
+  REST を使う
+
+  ```bash
+  gh api -X POST repos/:owner/:repo/pulls/<n>/requested_reviewers -f 'reviewers[]=<相手>'
+  ```
+
+  **相手がレビューを出した時点で依頼は消える。** つまり指摘を受けて直した PR は
+  必ず依頼が空になっている。詳しくは CONTRIBUTING.md
+  「レビュー依頼は『出したか』ではなく『いま飛んでいるか』で見る」
 - 会話スレッドは resolve する（`required_review_thread_resolution` が有効）
 
 ### 4. 新しい仕事を取る（手が空いているときだけ）
@@ -113,9 +132,14 @@ gh pr list --search "review-requested:@me" --state open
 ## 絶対にやらないこと
 
 - `main` へ直接 push
-- 自分の PR をマージ（自己承認は通らない）
+- **自分の PR を自分で approve する**（GitHub が拒否する。他人の approve を必ずもらう）。
+  **他人が approve した自分の PR を自分でマージするのは構わない。**
+  むしろそうしないと「approve 済み・未マージ」が溜まる（#111 が5日間そうなっていた）
 - 他人がアサインされた issue / PR に手を出す
-- `make etl` の実行（本番・staging のデータを壊しうる）
+- **ETL ワークフローを dev 以外（staging / prod）に対して実行する。**
+  ETL 用のサービスアカウントは `bigquery.dataEditor` がプロジェクト単位のため
+  **staging と prod にも書ける**（#144）。`target` の取り違えがそのまま事故になる。
+  なお `make etl` は手元から実行できない（コンテナから取得元に到達できない。#127）
 - `agent:ready` が付いていない issue の着手
 - 内容を理解しないまま approve する
 - 推測でモデル名・API 仕様・データの中身を書く（動かして確かめる）
