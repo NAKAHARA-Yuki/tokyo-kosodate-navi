@@ -50,7 +50,10 @@ PROPERTY GRAPH: `kosodate_graph`
 > `min_age_months` だけで絞ると6割超が NULL のため素通りし、
 > 「10歳なのに新生児向け制度が出る」状態になります（過去に実際に発生）。
 
-カバー率: `explicit` 2,794件 / `inferred` 2,346件 / `unknown` 2,672件（= 絞り込み可能 66%）
+カバー率: `explicit` 2,794件 / `inferred` 2,406件 / `unknown` 2,612件（= 絞り込み可能 66.6%）
+
+> この数字は **ETL を回してから**の値です（issue #117 で 60件を推定できるようにした）。
+> 反映前は `inferred` 2,346件 / `unknown` 2,672件。
 
 ### 地域・分類コード
 
