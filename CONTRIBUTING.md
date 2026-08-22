@@ -151,9 +151,16 @@ gh api -X POST repos/:owner/:repo/pulls/<n>/requested_reviewers -f 'reviewers[]=
 ```
 
 **`gh pr edit --add-reviewer` は使えない。** `gh` のトークンが `repo` と `workflow` しか
-持っておらず、GraphQL を使うサブコマンドは `read:org` が無くて落ちる。
-同じ理由で `gh pr list --search "review-requested:@me"` は**エラーにならず0件を返す**ので、
-依頼が無いと誤読する。
+持っておらず、`login` / `name` / `slug` の解決に `read:org` を要求されて落ちる。
+
+```
+GraphQL: Your token has not been granted the required scopes to execute this query.
+The 'login' field requires one of the following scopes: ['read:org']
+```
+
+**`gh pr list --search "review-requested:@me"` のほうは、同じトークンでも動く。**
+検索は別系統のクエリで、`read:org` を要求しない。ただし**依頼が消えれば結果も消える**ので、
+0件は「依頼が無い」だけを意味する。**「自分がもう見た PR」は最初から出てこない。**
 
 - **指摘を直して push したら、その場でレビューを依頼し直す**
   （ruleset の `dismiss_stale_reviews_on_push` で approve が外れる）。
