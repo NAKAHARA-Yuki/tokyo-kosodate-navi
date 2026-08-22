@@ -46,15 +46,18 @@ gh api /notifications --jq '.[] | select(.repository.name=="tokyo-kosodate-navi"
 ### 2. レビュー依頼に応える
 
 ```bash
-# 自分に依頼が飛んでいる PR を探す
+gh pr list --search "review-requested:@me" --state open
+```
+
+**0件は「まだ誰も依頼していない」ではなく「いま自分に飛んでいる依頼が無い」**という意味。
+**自分がレビューを出した時点で依頼は消える**ので、対応済みの PR はここに出てこない。
+出し忘れを疑うときは PR 側から見る。
+
+```bash
 for n in $(gh pr list --state open --json number -q '.[].number'); do
   echo "#$n → $(gh api repos/:owner/:repo/pulls/$n -q '[.requested_reviewers[].login]|join(",")')"
 done
 ```
-
-**`gh pr list --search "review-requested:@me"` は使わない。** このリポジトリの `gh`
-トークンは `repo` と `workflow` しか持っておらず、検索を裏で支える GraphQL が通らない。
-エラーにならず **0件を返す**ので、依頼が無いと誤読する。
 
 必ず PR 上に結果を残す。Approve するか、指摘をコメントに書く。黙って放置しない。
 **approve の操作自体がブロックされている環境がある**（実際にそういうセッションがある）。
@@ -74,8 +77,8 @@ done
 
 - コードで応えるか、なぜ直さないかをコメントで返す
 - **直して push すると approve が外れる**（`dismiss_stale_reviews_on_push`）。
-  レビューを依頼し直す。**`gh pr edit --add-reviewer` は上と同じ理由で落ちる**ので
-  REST を使う
+  レビューを依頼し直す。**`gh pr edit --add-reviewer` は落ちる**（`login` の解決に
+  `read:org` が要るが、トークンは `repo` と `workflow` しか持っていない）ので REST を使う
 
   ```bash
   gh api -X POST repos/:owner/:repo/pulls/<n>/requested_reviewers -f 'reviewers[]=<相手>'
