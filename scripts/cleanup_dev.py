@@ -9,8 +9,13 @@
 """
 
 import json
+import os
 import subprocess
 import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app"))
+from etl_snapshot import SNAPSHOT_PREFIX  # noqa: E402
 
 PROJECT = "opendatahackathon-503500"
 REGION = "asia-northeast1"
@@ -143,10 +148,14 @@ def clean_tables() -> None:
     print(f"▶ BigQuery の検証用テーブル ({DATASET})")
     out = run(["bq", "ls", "--project_id", PROJECT, "--max_results", "1000", "--format", "json", DATASET])
     tables = json.loads(out) if out.strip() else []
+    # snap_ は ETL がロード直前に撮る退避（issue #160）。**掃除で消さない。**
+    # 消すと「壊れたときに戻せる」という前提が静かに崩れる。期限は
+    # スナップショット側の expiration_timestamp が持っている（30日）。
     extras = [
         t["tableReference"]["tableId"]
         for t in tables
         if t["tableReference"]["tableId"] not in CANONICAL_TABLES
+        and not t["tableReference"]["tableId"].startswith(SNAPSHOT_PREFIX)
     ]
     if not extras:
         print("  消すものはありません")
