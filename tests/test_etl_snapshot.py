@@ -8,6 +8,7 @@ BigQuery は使わない（クライアントを差し替えて、発行され�
 """
 
 from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
 
 from google.cloud.exceptions import NotFound
 
@@ -114,3 +115,30 @@ class TestSnapshotSuffix:
     def test_is_utc(self):
         """実行は GitHub Actions（UTC）なので、名前も UTC に揃える。"""
         assert snapshot_suffix(FIXED_NOW) == "20260822T081500Z"
+
+
+class TestSnapshotHappensBeforeLoad:
+    """**退避はロードの前**でなければ意味が無い（PR #162 のレビュー）。
+
+    順序が入れ替わると、退避される内容が「壊す直前の状態」ではなく
+    「壊した後の状態」になる。**仕組み全体が黙って無意味になり、
+    気づくのは実際に戻そうとした最悪のタイミング**。
+    """
+
+    def test_order_is_quality_then_snapshot_then_load(self):
+        import etl_to_bq
+
+        order: list[str] = []
+        with (
+            patch.object(etl_to_bq, "fetch_json", return_value=[{"id": "1"}]),
+            patch.object(etl_to_bq, "bigquery") as mock_bq,
+            patch.object(etl_to_bq, "transform", return_value={"benefits": "df"}),
+            patch.object(etl_to_bq, "ensure_dataset"),
+            patch.object(etl_to_bq, "run_quality_checks", side_effect=lambda *a: order.append("quality")),
+            patch.object(etl_to_bq, "snapshot_tables", side_effect=lambda *a: order.append("snapshot")),
+            patch.object(etl_to_bq, "load_tables", side_effect=lambda *a: order.append("load")),
+        ):
+            mock_bq.Client.return_value = MagicMock()
+            etl_to_bq.main()
+
+        assert order == ["quality", "snapshot", "load"], order
