@@ -39,6 +39,25 @@ ATTRIBUTE_LABELS = {
 }
 
 
+# `benefit_leads_to` のエッジは根拠の強さが違う。**強い順に返す**（issue #145）。
+#
+#   REQUIRES_BENEFIT  条件文に「〜を受けている」と書いてある        → 利用者に見せられる
+#   SHARED_DOC        同じ書類が要る                              → 書類ノードの掃除（#120）待ち
+#   NEXT_STEP         年齢帯が隣り合っているだけ                    → 制度としての関係は無い
+#
+# 順序を付けないと、根拠の強いものが弱いものに埋もれる。dev の実測では
+# REQUIRES_BENEFIT が全体の 2.4%（155/6,327）しかなく、上限に達した時点で
+# **いちばん見せたいものが落ちる**（しかも順序が不定なので実行ごとに変わる）。
+RELATION_PRIORITY = ["REQUIRES_BENEFIT", "SHARED_DOC", "NEXT_STEP"]
+
+# 1リクエストで返すエッジの上限。**打ち切り用の安全弁**で、意味のある件数ではない。
+# `include_skill_tree=true` のとき最大30制度分を引くため、上限が無いと
+# 書類共有のエッジだけで数千件返りうる（SHARED_DOC は組み合わせで増える）。
+#
+# 上の並び順があるので、**打ち切られるのは必ず根拠の弱い側**になる。
+NEXT_STEPS_LIMIT = 80
+
+
 def months_between(birth: date, today: date | None = None) -> int:
     """生年月日から満月齢を求める。誕生日が来ていない月は繰り上げない。"""
     today = today or date.today()
@@ -259,8 +278,19 @@ def match_benefits(
 
 
 def _fetch_next_steps(benefit_ids: list[str]):
-    """マッチした制度から「次に繋がる制度」をスキルツリーのエッジで取得する。"""
+    """マッチした制度から「次に繋がる制度」をスキルツリーのエッジで取得する。
+
+    **根拠の強い順に返す**（`RELATION_PRIORITY`）。以前は `ORDER BY` が無く、
+    順序も打ち切りも BigQuery 任せだったため、`REQUIRES_BENEFIT`（全体の2.4%）が
+    `NEXT_STEP` に埋もれて出ないことがあった（issue #145）。
+    """
     # BigQuery Graph (GQL) は Enterprise 予約が必須になったため通常 SQL で書いている（docs/adr/0003）。
+    #
+    # 並び順は Python 側の定数から組み立てる。SQL に直書きすると
+    # RELATION_PRIORITY を変えたときにこちらが取り残される。
+    priority_cases = "\n            ".join(
+        f"WHEN '{relation}' THEN {i}" for i, relation in enumerate(RELATION_PRIORITY)
+    )
     query = f"""
         SELECT
           a.benefit_id AS from_id, a.title AS from_title,
@@ -270,10 +300,20 @@ def _fetch_next_steps(benefit_ids: list[str]):
         JOIN `{PROJECT_ID}.{DATASET_ID}.benefits` a ON a.benefit_id = e.from_benefit_id
         JOIN `{PROJECT_ID}.{DATASET_ID}.benefits` b ON b.benefit_id = e.to_benefit_id
         WHERE e.from_benefit_id IN UNNEST(@ids)
-        LIMIT 80
+        ORDER BY
+          CASE e.relation
+            {priority_cases}
+            ELSE {len(RELATION_PRIORITY)}
+          END,
+          -- 打ち切られる位置を実行ごとに変えないための決定的な並び。
+          a.title, b.title, e.relation
+        LIMIT @next_steps_limit
     """
     job_config = bigquery.QueryJobConfig(
-        query_parameters=[bigquery.ArrayQueryParameter("ids", "STRING", benefit_ids)]
+        query_parameters=[
+            bigquery.ArrayQueryParameter("ids", "STRING", benefit_ids),
+            bigquery.ScalarQueryParameter("next_steps_limit", "INT64", NEXT_STEPS_LIMIT),
+        ]
     )
     return [
         {
