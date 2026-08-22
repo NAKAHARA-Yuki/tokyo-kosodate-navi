@@ -18,8 +18,10 @@
 持たなくても、直前の ETL 結果がそこにあるため。初回（テーブルが無い）は比較を飛ばす。
 """
 
+import os
+
 import pandas as pd
-from config import DATASET_ID
+from config import DATASET_ID, describe
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
 
@@ -215,6 +217,54 @@ def age_contradictions(benefits) -> list[str]:
     return found
 
 
+def _summary_markdown(tables: dict, previous: dict | None, contradictions: list[str]) -> str:
+    """実行画面に出す要約。**0件のときも「0件」と書く。**
+
+    「検出されなかった」と「そもそも検査していない」は、黙っていると区別できない。
+    """
+    lines = [f"## ETL の品質チェック（{describe()}）", ""]
+
+    lines += ["### 件数", "", "| テーブル | 前回 | 今回 | 差 |", "|---|---:|---:|---:|"]
+    for name, df in sorted(tables.items()):
+        now = len(df)
+        before = (previous or {}).get(name)
+        if before is None:
+            lines.append(f"| {name} | — | {now:,} | 初回 |")
+        else:
+            lines.append(f"| {name} | {before:,} | {now:,} | {now - before:+,} |")
+
+    lines += ["", "### 制度名と年齢欄の食い違い", ""]
+    if not contradictions:
+        lines.append("**0件。** 元データの年齢欄と制度名は矛盾していない。")
+    else:
+        lines.append(
+            f"**{len(contradictions)}件。** 元データ側の問題なのでロードは止めていない（issue #114）。"
+        )
+        lines.append("")
+        for line in contradictions[:MAX_CONTRADICTIONS_SHOWN]:
+            lines.append(f"- {line}")
+        if len(contradictions) > MAX_CONTRADICTIONS_SHOWN:
+            lines.append(f"- … 他 {len(contradictions) - MAX_CONTRADICTIONS_SHOWN} 件")
+    return "\n".join(lines) + "\n"
+
+
+def write_step_summary(tables: dict, previous: dict | None, contradictions: list[str]) -> bool:
+    """GitHub Actions の実行画面（Summary タブ）に要約を書く。
+
+    **ログに出すだけでは誰も読まない。** 検出は #141 で入っていたが、結果は
+    ワークフローのログにしか出ておらず、grep した人しか気づけなかった（issue #159）。
+    件数が 11 から 30 に増えても静かなままなので、増えたときこそ見たいのに見えない。
+
+    `GITHUB_STEP_SUMMARY` が無い環境（手元・テスト）では何もしない。
+    """
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not path:
+        return False
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(_summary_markdown(tables, previous, contradictions))
+    return True
+
+
 def run_quality_checks(client: bigquery.Client, project_id: str, tables: dict) -> None:
     """チェックして、問題があれば QualityCheckError を投げる（ロードは行われない）。"""
     previous = previous_row_counts(client, project_id, tables.keys())
@@ -243,4 +293,5 @@ def run_quality_checks(client: bigquery.Client, project_id: str, tables: dict) -
         if len(contradictions) > MAX_CONTRADICTIONS_SHOWN:
             print(f"  … 他 {len(contradictions) - MAX_CONTRADICTIONS_SHOWN} 件", flush=True)
 
+    write_step_summary(tables, previous, contradictions)
     print(f"[quality] {len(tables)} テーブルすべてが基準を満たした", flush=True)
