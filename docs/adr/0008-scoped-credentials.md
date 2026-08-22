@@ -140,3 +140,42 @@ owner の認証情報は同じマシンに残っている。
 - dev のサービスを増やすたびに、権限を持つ人の手作業が1回だけ挟まる。
   自動化していないのは、それが `claude-dev` に新規作成権限を渡すことと同義になるため。
   頻度が低い（サービス単位で1回きり）ので、手間より境界の明確さを取る
+
+## 追記（2026-08-22）: ETL 専用のサービスアカウント（issue #144）
+
+ETL を GitHub Actions から回せるようにした（#127）ときに、
+**デプロイ用の SA（`GCP_DEPLOY_SERVICE_ACCOUNT`）を流用する形で書いていた。**
+初回実行が BigQuery の権限で落ち、そこで用途を分ける判断をした。
+
+デプロイ用 SA に BigQuery の書き込み権限を足すと、**1つの SA が
+「Cloud Run のデプロイ」と「本番データの全置換」の両方を持つ**ことになる。
+この ADR が `claude-dev` を用途ごとに分けた考え方と合わない。
+
+サービスアカウント `kosodate-etl@opendatahackathon-503500.iam.gserviceaccount.com`
+
+| 対象 | 権限 |
+|---|---|
+| BigQuery（プロジェクト全体） | `roles/bigquery.dataEditor` / `roles/bigquery.jobUser` |
+| Cloud Run | **なし** |
+
+Workload Identity で `attribute.repository=NAKAHARA-Yuki/tokyo-kosodate-navi` に紐づけており、
+このリポジトリの Actions からしか借用できない。
+
+### ⚠️ データセット単位では絞れていない
+
+**`roles/bigquery.dataEditor` はプロジェクト単位でしか付いていないため、
+この SA は dev だけでなく staging と prod にも書き込める。**
+
+- `bigquery.jobUser` は仕様上プロジェクト単位でしか付かない（クエリジョブがプロジェクトのリソース）
+- `dataEditor` はデータセット単位に絞れるが、いまは付けていない
+
+つまり **`claude-dev` のような「dev しか壊せない」保証は、この SA には無い。**
+環境の取り違えを止めているのは**権限ではなく `etl.yml` の `confirm` 入力**だけになる。
+
+```
+target = prod を選んだうえで、confirm に "prod" と入力しないと走らない
+```
+
+**歯止めが1枚しかないことを承知して運用する。** 絞るなら `dataEditor` を
+データセット単位（dev のみ書き込み可の SA と、staging/prod 用を分ける）にするのが筋で、
+そこまでやるかは運用の頻度を見てから決める。
