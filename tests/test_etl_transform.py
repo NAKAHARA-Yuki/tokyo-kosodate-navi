@@ -773,3 +773,32 @@ class TestSharedDocIgnoresNonDocuments:
     def test_本物の書類ならエッジを張る(self):
         """**塞ぎすぎていないこと。** ここが空になると、この検査群は無意味になる。"""
         assert len(self._shared_docs("母子健康手帳")) >= 1
+
+
+class TestDisabilityLimitDoesNotCreateNewCeiling:
+    """**上限が無い制度に、新しい上限を付けない**（PR #169 のレビュー）。
+
+    `effective_max_age_months` が NULL の制度は、元々どの年齢にも出ていた。
+    そこへ `disability_max_age_months` だけ入ると、
+    **障害があると答えた人にだけ**制度が見えなくなる。
+    正直に申告した人が不利になる、いちばん避けたい壊れ方。
+    """
+
+    def row(self, target: dict):
+        return build_benefit_row({"institutionName": {"canonicalName": "児童手当"}, "target": target}, "p1")
+
+    def test_上限が無い制度には入れない(self):
+        """条件文にだけ障害と年齢が出てくる形（実データの誤検出はこの形だった）。"""
+        r = self.row({"conditions": "障がいの状態にある20歳未満の児童を含む"})
+        assert r["effective_max_age_months"] is None
+        assert r["disability_max_age_months"] is None
+
+    def test_広げるときだけ入る(self):
+        r = self.row(
+            {
+                "targetPersons": "18歳に到達した年度末まで（障がいの状態にある20歳未満の児童を含む）",
+                "lessThanOrEqualTo": {"targetAgeOfMonths": 227},
+            }
+        )
+        assert r["effective_max_age_months"] == 227
+        assert r["disability_max_age_months"] == 239

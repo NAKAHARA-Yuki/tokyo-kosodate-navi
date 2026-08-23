@@ -192,6 +192,22 @@ MUTATIONS = [
         "tests": ["tests"],
     },
     {
+        "id": "disability-limit-creates-new-ceiling",
+        "why": "上限が無い制度に新しい上限を付けないこと（#157 / PR #169 のレビュー）。障害を申告した人にだけ制度が消える",
+        "file": "src/etl_graph.py",
+        "old": "    if disability_max is not None and (effective_max is None or disability_max <= effective_max):",
+        "new": "    if disability_max is not None and effective_max is not None and disability_max <= effective_max:",
+        "tests": ["tests"],
+    },
+    {
+        "id": "disability-years-unbounded",
+        "why": "拾う年数を19〜25に絞ること（PR #169 のレビュー）。書類の注記の「3歳未満」まで上限になる",
+        "file": "src/age_rules.py",
+        "old": "    if years is None or not (19 <= years <= 25):",
+        "new": "    if years is None:",
+        "tests": ["tests"],
+    },
+    {
         "id": "disability-limit-ignored",
         "why": "障害があると答えた人に広い上限を使うこと（#157）。無視すると18〜19歳で対象から外れる",
         "file": "app/queries.py",

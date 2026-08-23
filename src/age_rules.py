@@ -315,7 +315,15 @@ def extract_disability_max_age(text):
         return None
     years = _num(m.group(1) or m.group(3))
     boundary = m.group(2) or m.group(4)
-    if years is None:
+    # **この規則の主旨は「18歳の原則を、障害があるときだけ20歳未満まで伸ばす」こと。**
+    # それ以外の年数が出てきたら、障害と年齢が同じ文にあるだけの別の話。
+    #
+    #   （注3）すでに3歳未満の児童の手当を受給している場合は不要です  ← 書類の注記
+    #   生後57日以上満2歳未満の児童　※障がい児、アレルギー児は要相談  ← 相談の案内
+    #
+    # 実データで確認した誤検出は 65 / 3 / 2 歳、正しい検出はすべて 20 歳だった
+    # （PR #169 のレビュー）。
+    if years is None or not (19 <= years <= 25):
         return None
     # 「20歳未満」= 19歳11か月まで。「20歳まで」= 20歳11か月まで。
     return years * 12 - 1 if boundary in ("未満", "に達する", "に満たない") else years * 12 + 11

@@ -123,7 +123,12 @@ def build_benefit_row(rec: dict, benefit_id: str) -> dict:
             disability_max = found
             break
     # 広い側にしか意味が無い。狭める向きに使うと「対象なのに出ない」を作る。
-    if disability_max is not None and effective_max is not None and disability_max <= effective_max:
+    #
+    # **上限が無い制度には入れない。** ここが抜けていたため、元々どの年齢にも
+    # 出ていた制度（effective_max が NULL）に、**障害があると答えた人にだけ**
+    # 新しい上限が付いていた（PR #169 のレビュー。実データで34件が同じ形）。
+    # 正直に申告した人にだけ制度が見えなくなる、といういちばん避けたい壊れ方になる。
+    if disability_max is not None and (effective_max is None or disability_max <= effective_max):
         disability_max = None
 
     # 妊娠期の制度は「子どもの年齢」では表せないため独立したフラグで持つ

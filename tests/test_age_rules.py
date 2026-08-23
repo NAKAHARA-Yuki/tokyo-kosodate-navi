@@ -486,3 +486,18 @@ class TestDisabilityMaxAge:
 
     def test_まで_は誕生年を含む(self):
         assert extract_disability_max_age("障害のある児童は20歳まで") == 251
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # すべて実データ（PR #169 のレビューで見つかった誤検出）
+            "（注3）すでに3歳未満の児童の手当を受給している場合は不要です",
+            "生後57日以上満2歳未満の児童　※障がい児、アレルギー児は要相談",
+        ],
+    )
+    def test_障害と年齢が同じ文にあるだけのものは拾わない(self, text):
+        """**この規則の主旨は「18歳の原則を20歳未満まで伸ばす」こと。**
+
+        書類の注記や相談の案内まで拾うと、まったく別の年齢が上限になる。
+        """
+        assert extract_disability_max_age(text) is None
