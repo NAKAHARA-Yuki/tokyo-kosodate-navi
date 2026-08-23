@@ -1,5 +1,6 @@
 import { Link } from "@/components/dads/link";
 import type { DataSource } from "@/lib/types";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 /**
  * 全ページ共通のフッター。出典・免責・データの鮮度を出す。
@@ -32,6 +33,9 @@ export function SiteFooter({ dataSource }: { dataSource: DataSource | null }) {
   return (
     <footer className="mt-12 border-t border-solid-gray-300 bg-solid-gray-50">
       <div className="mx-auto flex max-w-3xl flex-col gap-3 p-6 text-dns-14N-130 text-solid-gray-800">
+        {/* 配色の切り替え（issue #101）。読むことの邪魔にならないフッターに置く。 */}
+        <ThemeToggle />
+
         <p>
           <span className="font-bold">出典:</span> {source.publisher}
           {"「"}
