@@ -54,6 +54,7 @@ def snapshot_tables(
     suffix = snapshot_suffix(now)
     expires = (now or datetime.now(UTC)) + timedelta(days=SNAPSHOT_EXPIRATION_DAYS)
     created: list[str] = []
+    failed: list[str] = []
 
     for name in table_names:
         source = f"{project_id}.{DATASET_ID}.{name}"
@@ -62,11 +63,18 @@ def snapshot_tables(
         except NotFound:
             continue
         target = f"{project_id}.{DATASET_ID}.{SNAPSHOT_PREFIX}{name}_{suffix}"
-        client.query(
-            f"CREATE SNAPSHOT TABLE `{target}` CLONE `{source}` "
-            f"OPTIONS(expiration_timestamp = TIMESTAMP '{expires:%Y-%m-%d %H:%M:%S} UTC')"
-        ).result()
-        created.append(target)
+        try:
+            client.query(
+                f"CREATE SNAPSHOT TABLE `{target}` CLONE `{source}` "
+                f"OPTIONS(expiration_timestamp = TIMESTAMP '{expires:%Y-%m-%d %H:%M:%S} UTC')"
+            ).result()
+            created.append(target)
+        except Exception as exc:  # noqa: BLE001
+            # **退避に失敗しても ETL は止めない。**
+            # 守るための仕組みが、守る対象を止めてしまっては本末転倒。
+            # 実際に権限不足（bigquery.tables.deleteSnapshot）で ETL 全体が落ちた。
+            # 退避が無いまま上書きされることになるので、黙って続けず必ず出す。
+            failed.append(f"{name}: {type(exc).__name__}: {exc}")
 
     if created:
         print(
@@ -74,6 +82,13 @@ def snapshot_tables(
             f"{DATASET_ID}.{SNAPSHOT_PREFIX}*_{suffix}",
             flush=True,
         )
-    else:
+    if failed:
+        print(
+            f"[snapshot] ⚠ {len(failed)} 件の退避に失敗した。**このまま上書きすると戻せない**",
+            flush=True,
+        )
+        for line in failed:
+            print(f"  - {line}", flush=True)
+    if not created and not failed:
         print("[snapshot] 退避するテーブルが無い（初回実行）", flush=True)
     return created
