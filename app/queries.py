@@ -13,7 +13,11 @@ routers/timeline.py の get_timeline は
 """
 
 # 年齢が明示されている制度（確度が高い）を先に、推定・不明なものを後に出す。
-AGE_SOURCE_ORDER_BY = "CASE age_source WHEN 'explicit' THEN 0 WHEN 'inferred' THEN 1 ELSE 2 END"
+# `corrected` は元データの年齢欄が制度名と食い違ったため制度名を採ったもの（issue #114）。
+# 確度は推定と同じ扱いにする（こちらの読み取りに依っているため）。
+AGE_SOURCE_ORDER_BY = (
+    "CASE age_source WHEN 'explicit' THEN 0 WHEN 'inferred' THEN 1 WHEN 'corrected' THEN 1 ELSE 2 END"
+)
 
 
 def max_age_expr(has_disability: bool = False) -> str:

@@ -9,7 +9,7 @@ export type Benefit = {
   summary: string;
   min_age_months: number | null;
   max_age_months: number | null;
-  age_source: "explicit" | "inferred" | "unknown";
+  age_source: "explicit" | "inferred" | "corrected" | "unknown";
   area_name: string | null;
   has_free_text_conditions: boolean;
   is_free: boolean;
@@ -69,7 +69,7 @@ export type SubgraphNode = {
     // effective_min/max_age_months（明示値が無ければ推定値）。素の min/max ではない。
     min_age_months?: number | null;
     max_age_months?: number | null;
-    age_source?: "explicit" | "inferred" | "unknown";
+    age_source?: "explicit" | "inferred" | "corrected" | "unknown";
     cost_text?: string | null;
     cost_conditions_text?: string | null;
     monetary_support_text?: string | null;

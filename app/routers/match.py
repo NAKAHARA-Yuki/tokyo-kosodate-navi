@@ -225,7 +225,12 @@ def match_benefits(
         matched = [a for a in ages if (lo is None or lo <= a) and (hi is None or hi >= a)]
         if ages and (lo is not None or hi is not None) and matched:
             span = f"{lo if lo is not None else '-'}〜{hi if hi is not None else '-'}ヶ月"
-            suffix = "（対象年齢は本文からの推定）" if r["age_source"] == "inferred" else ""
+            suffix = ""
+            if r["age_source"] == "inferred":
+                suffix = "（対象年齢は本文からの推定）"
+            elif r["age_source"] == "corrected":
+                # 元データの年齢欄が制度名と食い違っていたので制度名を採った（issue #114）
+                suffix = "（対象年齢は制度名から補正）"
             who = "・".join(f"月齢{a}" for a in matched)
             reasons.append(f"お子さん（{who}）が対象範囲{span}に該当{suffix}")
         # 指定された属性のうち、この制度が該当するもの。**絞り込みには使わない。**
