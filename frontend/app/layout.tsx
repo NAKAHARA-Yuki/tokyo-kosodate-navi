@@ -5,6 +5,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { fetchBackend } from "@/lib/backend";
 import type { DataSource } from "@/lib/types";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
 
 // デジタル庁デザインシステムのタイポグラフィは Noto Sans JP を前提にしている
 // （@digital-go-jp/tailwind-theme-plugin の --font-sans も 'Noto Sans JP' を先頭に置く）。
@@ -54,7 +55,13 @@ export default async function RootLayout({
   const dataSource = await getDataSource();
 
   return (
-    <html lang="ja" className={`${notoSansJP.variable} h-full antialiased`}>
+    <html lang="ja" className={`${notoSansJP.variable} h-full antialiased`} suppressHydrationWarning>
+      <head>
+        {/* **React が動く前に配色を決める**（issue #101）。マウント後に当てると
+            一瞬ライトが見えてから暗くなる。html の属性を直接書き換えるので、
+            サーバの出力と食い違う。suppressHydrationWarning はそのための指定。 */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="min-h-full flex flex-col">
         <SiteHeader />
         {/* フッターを最下部に押し下げる。中身が短いページでも footer が浮かないようにする */}

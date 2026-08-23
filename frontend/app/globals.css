@@ -17,20 +17,60 @@
   --font-sans: var(--font-noto-sans-jp), -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
-/* ダークモードには**まだ対応しない。**
-   `create-next-app` の雛形には prefers-color-scheme のブロックがあったが、外した。
+/* ダークモード（issue #101）。
+   **画面のクラスは書き換えない。** デザインシステムのトークンは Tailwind v4 の
+   CSS 変数なので、変数の中身だけを差し替えれば全画面が一度に切り替わる。
+   クラスを1つずつ dark: で二重に書くと、書き漏らしたところだけが読めなくなる。
 
-   body の背景だけが黒くなる一方、中身はデジタル庁デザインシステムのトークン
-   （text-solid-gray-800 = #333333 など）を直接指定していて切り替わらない。
-   結果、黒地に濃いグレーの文字が乗る。staging の実機で測ると
+   **明るさの序列を保ったまま反転させる。** solid-gray は数字が大きいほど濃い
+   （文字色に使う）ので、暗背景では逆に明るくする。序列を崩すと
+   「見出しより本文が濃い」のような崩れ方をする。
 
-     本文     #333333 on #0a0a0a  → 1.57:1
-     リンク   #00118f on #0a0a0a  → 1.39:1
+   以前ここは対応せず固定していた。body の背景だけ黒くなり、中身のトークンは
+   ライトのままで、黒地に濃いグレーの文字が乗っていたため（実測 1.57:1）。
+   トークンごと差し替えるようにしたので、その問題は起きない。 */
+:root[data-theme="dark"] {
+  --background: #12141a;
+  --foreground: #f2f3f5;
 
-   WCAG AA は 4.5:1 なので、事実上読めない。行政情報を扱う画面で「読めない」は
-   機能していないのと同じなので、中途半端に反転させるより固定する方が害が小さい。
+  /* 文字に使う側（数字が大きい）を明るく、背景に使う側（小さい）を暗く */
+  --color-solid-gray-900: #f7f8fa;
+  --color-solid-gray-800: #e4e6ea;
+  --color-solid-gray-700: #c7cbd2;
+  --color-solid-gray-600: #aab0ba;
+  --color-solid-gray-536: #9aa1ac;
+  --color-solid-gray-500: #8a919d;
+  --color-solid-gray-420: #767d89;
+  --color-solid-gray-400: #6b727e;
+  --color-solid-gray-300: #4a505a;
+  --color-solid-gray-200: #363b44;
+  --color-solid-gray-100: #262a31;
+  --color-solid-gray-50: #1b1e24;
 
-   ちゃんと対応するなら、全トークンにダーク用の値を当てて手動切り替えも用意する（#101）。 */
+  /* リンク。#00118f は暗背景で沈む（実測 1.39:1）ので明るい側へ寄せる */
+  --color-blue-1000: #9db4ff;
+  --color-blue-700: #7f9cff;
+
+  /* 状態色。**色相は変えない。** 意味（注意・エラー・完了）が変わってしまう */
+  --color-yellow-1100: #ffd97a;
+  --color-yellow-1000: #ffd166;
+  --color-yellow-300: #4a3c00;
+  --color-orange-1000: #ffb08a;
+  --color-orange-900: #ff9a6b;
+  --color-orange-800: #ff8c57;
+  --color-red-1000: #ff9a9a;
+  --color-red-900: #ff8080;
+  --color-green-800: #6fd39b;
+}
+
+/* **OS 追従は data-theme の値として解決する**（layout.tsx の先読みスクリプト）。
+   ここで prefers-color-scheme に同じトークンを二重に書くと、
+   片方だけ直したときに data-theme とずれる。切り替えの入口は1つに保つ。
+
+   スクリプトが動かない環境ではライトのまま表示される。読めない状態にはならない。 */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
 
 body {
   background: var(--background);

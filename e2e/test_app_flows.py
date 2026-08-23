@@ -136,12 +136,58 @@ class TestReadableInDarkMode:
         yield page
         context.close()
 
+    @pytest.fixture
+    def light_page(self, browser, base_url):
+        context = browser.new_context(color_scheme="light")
+        page = context.new_page()
+        page.set_default_timeout(15_000)
+        page.goto(base_url)
+        page.wait_for_selector("main ul li")
+        yield page
+        context.close()
+
     @pytest.mark.parametrize("selector,label", [("main li p", "制度の概要"), ("main li a", "制度名のリンク")])
     def test_text_has_enough_contrast(self, dark_page, selector, label):
         background = dark_page.evaluate("getComputedStyle(document.body).backgroundColor")
         color = dark_page.evaluate(f"getComputedStyle(document.querySelector({selector!r})).color")
         ratio = contrast_ratio(color, background)
         assert ratio >= 4.5, f"{label}が読めません: {color} on {background} = {ratio:.2f}:1"
+
+    @pytest.mark.parametrize("selector,label", [("main li p", "制度の概要"), ("main li a", "制度名のリンク")])
+    def test_light_side_also_has_enough_contrast(self, light_page, selector, label):
+        """**ライト側も測る。** ダークに寄せた結果ライトが読みにくくなっていないこと。"""
+        background = light_page.evaluate("getComputedStyle(document.body).backgroundColor")
+        color = light_page.evaluate(f"getComputedStyle(document.querySelector({selector!r})).color")
+        ratio = contrast_ratio(color, background)
+        assert ratio >= 4.5, f"{label}が読めません: {color} on {background} = {ratio:.2f}:1"
+
+    def test_dark_is_actually_dark(self, dark_page):
+        """**反転していることそのもの**を見る。
+
+        コントラストだけだと「ライトのままでも通る」ので、
+        ダークモードに対応したかどうかは分からない。
+        """
+        theme = dark_page.evaluate("document.documentElement.dataset.theme")
+        assert theme == "dark", f"data-theme が {theme!r}（先読みスクリプトが効いていない）"
+
+    def test_manual_choice_wins_over_os(self, browser, base_url):
+        """**OS 追従だけにしない**（issue #101）。
+
+        「OS はダークだが、このサイトはライトで読みたい」を選べること。
+        """
+        context = browser.new_context(color_scheme="dark")
+        page = context.new_page()
+        page.set_default_timeout(15_000)
+        page.goto(base_url)
+        page.wait_for_selector("[data-testid=theme-toggle]")
+        page.select_option("[data-testid=theme-toggle]", "light")
+        assert page.evaluate("document.documentElement.dataset.theme") == "light"
+
+        # 選択が保たれること（リロードしてもライトのまま）
+        page.reload()
+        page.wait_for_selector("main ul li")
+        assert page.evaluate("document.documentElement.dataset.theme") == "light"
+        context.close()
 
 
 class TestAgeSourceIsShown:

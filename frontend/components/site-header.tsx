@@ -11,7 +11,7 @@ import Link from "next/link";
  */
 export function SiteHeader() {
   return (
-    <header className="border-b border-solid-gray-300 bg-white">
+    <header className="border-b border-solid-gray-300 bg-[var(--background)]">
       <div className="mx-auto flex max-w-3xl items-center justify-between gap-4 p-4">
         <Link href="/" className="text-std-18B-160 text-solid-gray-900 no-underline">
           子育て支援制度ナレッジグラフ
