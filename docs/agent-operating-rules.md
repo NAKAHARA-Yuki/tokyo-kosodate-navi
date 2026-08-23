@@ -110,7 +110,16 @@ done
 4. 実装する
 5. `make check`（lint + test + e2e）を通す
 6. `gh pr create` で PR を出す。テンプレートの項目を埋める
-7. アサインは1人に絞る。レビュー依頼は他のエージェントに出す
+7. **アサインはレビュアー（自分以外）に付ける。** 自分に付けない。
+   アサインは「いま誰の番か」を表す印なので、書いた人に付けると誰待ちか分からなくなる。
+   レビュー依頼は複数人に出してよいが、**アサインは1人**に絞る
+
+   ```bash
+   gh api -X POST repos/:owner/:repo/issues/<n>/assignees      -f 'assignees[]=<相手>'
+   gh api -X POST repos/:owner/:repo/pulls/<n>/requested_reviewers -f 'reviewers[]=<相手>'
+   ```
+
+   **相手は交互にする**（bisse-828 / monacham）。同じ人に寄せると滞留する
 8. 連絡帳 #148 に1行追記する
 9. **作業ログ #149 に人間向けの説明を書く**（下記の型で）
 
