@@ -217,7 +217,9 @@ def age_contradictions(benefits) -> list[str]:
     return found
 
 
-def _summary_markdown(tables: dict, previous: dict | None, contradictions: list[str]) -> str:
+def _summary_markdown(
+    tables: dict, previous: dict | None, contradictions: list[str], inverted: list[str] | None = None
+) -> str:
     """実行画面に出す要約。**0件のときも「0件」と書く。**
 
     「検出されなかった」と「そもそも検査していない」は、黙っていると区別できない。
@@ -245,10 +247,21 @@ def _summary_markdown(tables: dict, previous: dict | None, contradictions: list[
             lines.append(f"- {line}")
         if len(contradictions) > MAX_CONTRADICTIONS_SHOWN:
             lines.append(f"- … 他 {len(contradictions) - MAX_CONTRADICTIONS_SHOWN} 件")
+    lines += ["", "### 年齢欄の上下が逆", ""]
+    inverted = inverted or []
+    if not inverted:
+        lines.append("**0件。**")
+    else:
+        lines.append(f"**{len(inverted)}件。** 判定では入れ替えて使う（issue #173）。")
+        lines.append("")
+        for line in inverted[:MAX_CONTRADICTIONS_SHOWN]:
+            lines.append(f"- {line}")
     return "\n".join(lines) + "\n"
 
 
-def write_step_summary(tables: dict, previous: dict | None, contradictions: list[str]) -> bool:
+def write_step_summary(
+    tables: dict, previous: dict | None, contradictions: list[str], inverted: list[str] | None = None
+) -> bool:
     """GitHub Actions の実行画面（Summary タブ）に要約を書く。
 
     **ログに出すだけでは誰も読まない。** 検出は #141 で入っていたが、結果は
@@ -261,8 +274,32 @@ def write_step_summary(tables: dict, previous: dict | None, contradictions: list
     if not path:
         return False
     with open(path, "a", encoding="utf-8") as f:
-        f.write(_summary_markdown(tables, previous, contradictions))
+        f.write(_summary_markdown(tables, previous, contradictions, inverted))
     return True
+
+
+def inverted_age_columns(benefits) -> list[str]:
+    """**年齢欄の上下が逆**になっている行を挙げる（issue #173）。
+
+    絞り込みは `min <= 子の月齢 <= max` なので、逆転していると
+    **どの年齢にもマッチしない**。制度としては存在するのに、
+    属性から探している人には決して出てこない。
+
+    判定では入れ替えて使う（`etl_graph`）。ここは件数を見えるようにするためのもの。
+    """
+    if benefits is None or len(benefits) == 0:
+        return []
+    if not {"min_age_months", "max_age_months"}.issubset(benefits.columns):
+        return []
+    found: list[str] = []
+    for row in benefits.itertuples(index=False):
+        lo = getattr(row, "min_age_months", None)
+        hi = getattr(row, "max_age_months", None)
+        if pd.isna(lo) or pd.isna(hi) or int(lo) <= int(hi):
+            continue
+        area = getattr(row, "area_name", "") or ""
+        found.append(f"{area} 「{getattr(row, 'title', '')[:40]}」 年齢欄={int(lo)}〜{int(hi)}か月")
+    return found
 
 
 def run_quality_checks(client: bigquery.Client, project_id: str, tables: dict) -> None:
@@ -293,5 +330,15 @@ def run_quality_checks(client: bigquery.Client, project_id: str, tables: dict) -
         if len(contradictions) > MAX_CONTRADICTIONS_SHOWN:
             print(f"  … 他 {len(contradictions) - MAX_CONTRADICTIONS_SHOWN} 件", flush=True)
 
-    write_step_summary(tables, previous, contradictions)
+    inverted = inverted_age_columns(tables.get("benefits"))
+    if inverted:
+        print(
+            f"[quality] ⚠ 年齢欄の上下が逆になっているものが {len(inverted)} 件"
+            "（元データ側の問題。判定では入れ替えて使う。issue #173）",
+            flush=True,
+        )
+        for line in inverted[:MAX_CONTRADICTIONS_SHOWN]:
+            print(f"  - {line}", flush=True)
+
+    write_step_summary(tables, previous, contradictions, inverted)
     print(f"[quality] {len(tables)} テーブルすべてが基準を満たした", flush=True)

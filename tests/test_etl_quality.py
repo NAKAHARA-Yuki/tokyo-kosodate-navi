@@ -16,6 +16,7 @@ from etl_quality import (
     QualityCheckError,
     age_contradictions,
     check_tables,
+    inverted_age_columns,
     run_quality_checks,
     write_step_summary,
 )
@@ -279,3 +280,39 @@ class TestStepSummary:
         monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(path))
         write_step_summary(healthy_tables(), None, [])
         assert "先に書かれていたもの" in path.read_text(encoding="utf-8")
+
+
+class TestInvertedAgeColumnsAreReported:
+    """上下が逆の年齢欄を**見えるようにする**（issue #173）。"""
+
+    def frame(self, lo, hi):
+        return pd.DataFrame(
+            {"title": ["ある制度"], "min_age_months": [lo], "max_age_months": [hi], "area_name": ["某市"]}
+        )
+
+    def test_逆転を見つける(self):
+        found = inverted_age_columns(self.frame(144, 72))
+        assert len(found) == 1
+        assert "144〜72" in found[0]
+
+    def test_正しい順序は挙げない(self):
+        assert inverted_age_columns(self.frame(72, 144)) == []
+
+    def test_同じ値は挙げない(self):
+        assert inverted_age_columns(self.frame(36, 36)) == []
+
+    def test_欠けているものは挙げない(self):
+        assert inverted_age_columns(self.frame(None, 72)) == []
+
+    def test_実行画面にも出る(self, monkeypatch, tmp_path):
+        path = tmp_path / "summary.md"
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(path))
+        write_step_summary(healthy_tables(), None, [], ["某市 「ある制度」 年齢欄=144〜72か月"])
+        text = path.read_text(encoding="utf-8")
+        assert "上下が逆" in text and "144〜72" in text
+
+    def test_0件のときも書く(self, monkeypatch, tmp_path):
+        path = tmp_path / "summary.md"
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(path))
+        write_step_summary(healthy_tables(), None, [], [])
+        assert "上下が逆" in path.read_text(encoding="utf-8")

@@ -901,3 +901,58 @@ class TestCompositeTitlesAreNotCorrected:
     def test_単位を共有した列挙も複合とみなす(self):
         """「2・3・4か月」は数え方によっては1件にしか見えない。"""
         assert has_multiple_age_stages("2・3・4か月の赤ちゃんとママの会") is True
+
+
+class TestInvertedAgeColumns:
+    """**年齢欄の上下が逆**になっている行（issue #173）。
+
+    絞り込みは `min <= 子の月齢 <= max` なので、逆転していると
+    **どの年齢にもマッチしない**。制度としては存在するのに、
+    属性から探している人には決して出てこない。dev 実測で9件。
+    """
+
+    def row(self, title: str, lo, hi):
+        return build_benefit_row(
+            {
+                "institutionName": {"canonicalName": title},
+                "target": {
+                    "greaterThanOrEqualTo": {"targetAgeOfMonths": lo},
+                    "lessThanOrEqualTo": {"targetAgeOfMonths": hi},
+                },
+            },
+            "psid-1",
+        )
+
+    @pytest.mark.parametrize(
+        ("title", "lo", "hi"),
+        [
+            ("利島村放課後児童クラブ", 144, 72),  # 小学生向け。72〜143 が正しい
+            ("私立幼稚園等の施設案内", 83, 36),  # 私立幼稚園。36〜83
+            ("2・3・4か月の赤ちゃんとママの会", 4, 2),
+        ],
+    )
+    def test_判定では入れ替えて使う(self, title, lo, hi):
+        r = self.row(title, lo, hi)
+        assert (r["effective_min_age_months"], r["effective_max_age_months"]) == (hi, lo)
+        assert r["age_source"] == "corrected"
+
+    def test_元の欄は書き換えない(self):
+        """**元データに何が入っていたかは追える**ようにする（#114 と同じ方針）。"""
+        r = self.row("利島村放課後児童クラブ", 144, 72)
+        assert (r["min_age_months"], r["max_age_months"]) == (144, 72)
+
+    def test_正しい順序のものは触らない(self):
+        r = self.row("3歳児健康診査", 36, 47)
+        assert r["age_source"] == "explicit"
+        assert (r["effective_min_age_months"], r["effective_max_age_months"]) == (36, 47)
+
+    def test_片方しか無いものは触らない(self):
+        r = build_benefit_row(
+            {
+                "institutionName": {"canonicalName": "ある制度"},
+                "target": {"greaterThanOrEqualTo": {"targetAgeOfMonths": 12}},
+            },
+            "psid-1",
+        )
+        assert r["effective_min_age_months"] == 12
+        assert r["age_source"] == "explicit"
