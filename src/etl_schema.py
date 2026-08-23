@@ -25,6 +25,8 @@ BENEFITS_EXPLICIT_FIELDS = [
     bigquery.SchemaField("inferred_max_age_months", "INT64"),
     bigquery.SchemaField("effective_min_age_months", "INT64"),
     bigquery.SchemaField("effective_max_age_months", "INT64"),
+    # 障害のある子にだけ適用される上限（issue #157）。無い制度は NULL。
+    bigquery.SchemaField("disability_max_age_months", "INT64"),
     # 所得条件。本文から読み取れたものだけ入る（src/income_rules.py、issue #76）
     bigquery.SchemaField("income_max_yen", "INT64"),
     bigquery.SchemaField("income_max_inclusive", "BOOL"),

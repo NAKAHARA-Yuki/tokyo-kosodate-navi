@@ -173,7 +173,9 @@ def match_benefits(
     if ages:
         # 妊娠中なら「妊娠期の制度」も対象に加える。
         # きょうだいのいずれかが当たれば結果に含める。
-        conditions.append(ages_filter_sql("ages", include_prenatal=is_pregnant))
+        conditions.append(
+            ages_filter_sql("ages", include_prenatal=is_pregnant, has_disability=has_disability)
+        )
         params.append(bigquery.ArrayQueryParameter("ages", "INT64", ages))
     elif is_pregnant:
         conditions.append("is_prenatal")

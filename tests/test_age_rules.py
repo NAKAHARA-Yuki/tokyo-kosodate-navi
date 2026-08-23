@@ -7,7 +7,7 @@
 
 import pytest
 
-from age_rules import extract_age_range, is_prenatal
+from age_rules import extract_age_range, extract_disability_max_age, is_prenatal
 
 
 def months(years: int, mons: int = 0) -> int:
@@ -454,3 +454,50 @@ class TestMultipleTargetGroups:
             lo, hi, rule = extract_age_range(text)
             assert rule == "stage_until_fiscal_year_end", text
             assert (lo, hi) == (0, months(18, 11))
+
+
+class TestDisabilityMaxAge:
+    """**障害のある子だけに適用される上限**（issue #157）。
+
+    「原則18年度末まで。ただし障害のある児童は20歳未満」という二段構えの制度がある。
+    前段だけを読むと、18〜19歳で障害のあるお子さんを持つひとり親に
+    児童扶養手当・ひとり親家庭等医療費助成が出ない（実データで43件）。
+    """
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # すべて実データ（足立区・昭島区ほか）
+            "18歳に到達した年度末までの児童（政令で定める程度以上の障がいの状態にある20歳未満の児童を含む）",
+            "児童が18歳になった年の年度末まで、規則で定める程度の障がいをもつ児童は20歳未満",
+            "身体障害者手帳1から3級、愛の手帳1から3度程度の障害児は20歳未満",
+        ],
+    )
+    def test_二段構えの後段を拾う(self, text):
+        assert extract_disability_max_age(text) == 239  # 19歳11か月
+
+    def test_障害の記述が無ければ拾わない(self):
+        assert extract_disability_max_age("18歳に達する日以後の最初の3月31日まで") is None
+        assert extract_disability_max_age("20歳未満の方が対象です") is None
+
+    def test_文が違えば拾わない(self):
+        """**同じ文の中にあるものだけ。** 離れた記述で上限が伸びると対象外の人に出る。"""
+        assert extract_disability_max_age("障害のある方の相談窓口です。20歳未満の方が対象。") is None
+
+    def test_まで_は誕生年を含む(self):
+        assert extract_disability_max_age("障害のある児童は20歳まで") == 251
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # すべて実データ（PR #169 のレビューで見つかった誤検出）
+            "（注3）すでに3歳未満の児童の手当を受給している場合は不要です",
+            "生後57日以上満2歳未満の児童　※障がい児、アレルギー児は要相談",
+        ],
+    )
+    def test_障害と年齢が同じ文にあるだけのものは拾わない(self, text):
+        """**この規則の主旨は「18歳の原則を20歳未満まで伸ばす」こと。**
+
+        書類の注記や相談の案内まで拾うと、まったく別の年齢が上限になる。
+        """
+        assert extract_disability_max_age(text) is None

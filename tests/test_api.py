@@ -883,3 +883,21 @@ class TestDataSource:
         client.get("/api/data-source")
         assert "COUNT(DISTINCT area_code)" in bq.last_query
         assert "MAX(update_date)" in bq.last_query
+
+
+class TestDisabilityAgeLimit:
+    """**障害があると答えた人にだけ広い上限を使う**（issue #157）。"""
+
+    def test_障害ありのとき広い上限を見る(self, bq, client):
+        client.get("/api/benefits/match?child_age_months=228&has_disability=true")
+        assert "IFNULL(disability_max_age_months, effective_max_age_months)" in bq.last_query
+
+    def test_障害なしのときは従来どおり(self, bq, client):
+        client.get("/api/benefits/match?child_age_months=228")
+        assert "disability_max_age_months" not in bq.last_query
+        assert "effective_max_age_months" in bq.last_query
+
+    def test_下限は変わらない(self, bq, client):
+        """**広げるのは上限だけ。** 下限まで緩めると対象外の人に出る。"""
+        client.get("/api/benefits/match?child_age_months=228&has_disability=true")
+        assert "effective_min_age_months IS NULL OR effective_min_age_months <= a" in bq.last_query
