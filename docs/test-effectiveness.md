@@ -34,6 +34,9 @@ make cov            # 一度も実行されていない経路を探す
 | 書類名の長さを飾りを外す前に測る | `test_length_is_checked_after_stripping_decorations` |
 | E2E スタブが `area_code` を無視する | `TestAttributeFilter::test_area_filter_narrows_to_that_area` ほか1件 |
 | 退避をロードの**後**に回す | `TestSnapshotHappensBeforeLoad::test_order_is_quality_then_snapshot_then_load` |
+| ロードを追記（`WRITE_APPEND`）にする | `TestLoadTables::test_every_load_is_write_truncate` |
+| PROPERTY GRAPH の `DROP PRIMARY KEY` を落とす | `TestCreateGraphSql::test_every_add_is_preceded_by_a_drop` |
+| `benefits` スキーマの年齢列を STRING にする | `TestSchemaMatchesTransform::test_age_columns_are_integers` |
 
 ### 検証で見つかった穴（このPRで塞いだ）
 
@@ -99,8 +102,8 @@ swap を食い潰して `npm run build` が終わらなくなっていた。
 
 | モジュール | 中身 | 判断 |
 |---|---|---|
-| `src/etl_to_bq.py` | ETL のエントリポイント | **BigQuery への書き込み経路が丸ごと未実行**（#152）。<br>ただし**退避→ロードの順序だけ**は `test_etl_snapshot.py` で固定した（#160） |
-| `src/etl_load.py` | データセット作成・テーブルロード | 同上 |
+| `src/etl_to_bq.py` | ETL のエントリポイント | 退避→ロードの順序を `test_etl_snapshot.py` で固定（#160）。<br>取得・整形の全体経路は引き続き未実行 |
+| `src/etl_load.py` | データセット作成・テーブルロード | **`test_etl_load_path.py` で塞いだ**（#152） |
 | `src/etl_schema.py` | テーブルスキーマ定義 | 同上 |
 | `src/create_graph.py` | PROPERTY GRAPH の作成 | 同上 |
 | `src/verify_graph.py` | グラフの検証クエリ | 実行して目視する道具 |
