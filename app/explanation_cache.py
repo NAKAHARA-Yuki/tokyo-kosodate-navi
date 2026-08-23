@@ -22,6 +22,19 @@ from google.cloud import bigquery
 
 TABLE_NAME = "benefit_explanations"
 
+
+# キャッシュの失敗は**握りつぶすが、黙らない**（issue #164）。
+#
+# 例外を投げるとキャッシュの失敗が解説そのものの失敗になり、利用者から見た劣化が大きい。
+# 一方で完全に無言だと、1件も保存できていなくても画面は正常に動くため
+# （毎回 Gemini を呼ぶだけ）、**壊れても誰も気づかず、待ち時間と費用だけが増える**。
+# ADR 0015 がキャッシュを入れた目的がそのまま失われる。
+#
+# Cloud Run は stdout をそのままログに送るので、print で追える。
+def _warn(message: str) -> None:
+    print(f"[explanation_cache] {message}", flush=True)
+
+
 # **内容が同じでも作り直したいとき**に手で上げる整数。上げると全件が作り直しになる。
 #
 # プロンプトの文言を変えたときに上げる必要は無い。プロンプト本文そのものがキーに
@@ -102,7 +115,8 @@ def lookup(key: str) -> dict | None:
     )
     try:
         rows = list(dependencies.get_client().query(query, job_config=job_config).result())
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        _warn(f"参照できなかった: {type(exc).__name__}: {exc}")
         return None
     if not rows:
         return None
@@ -153,7 +167,11 @@ def store(
     try:
         client = dependencies.get_client()
         _ensure_table(client)
-        client.insert_rows_json(table_id(), [row])
-    except Exception:  # noqa: BLE001
-        pass
+        # **戻り値を見る。** insert_rows_json は例外を投げず、
+        # 失敗した行の情報をリストで返す（issue #164）。
+        errors = client.insert_rows_json(table_id(), [row])
+        if errors:
+            _warn(f"保存に失敗した行がある: {errors}")
+    except Exception as exc:  # noqa: BLE001
+        _warn(f"保存できなかった: {type(exc).__name__}: {exc}")
     return generated_at.isoformat()

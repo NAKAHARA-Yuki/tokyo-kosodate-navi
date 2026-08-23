@@ -5,6 +5,7 @@
 2. 保存してはいけないもの（review モードの下書き）を保存していないこと
 """
 
+import explanation_cache
 import pytest
 from conftest import FakeRow
 
@@ -268,3 +269,43 @@ class _RaisingOnCacheQuery:
 
     def __getattr__(self, name):
         return getattr(self._inner, name)
+
+
+class TestFailuresAreVisible:
+    """キャッシュの失敗は**握りつぶすが、黙らない**（issue #164）。
+
+    1件も保存できていなくても画面は正常に動く（毎回 Gemini を呼ぶだけ）ので、
+    **壊れても誰も気づかず、待ち時間と費用だけが増える**。
+    ADR 0015 がキャッシュを入れた目的がそのまま失われる。
+    """
+
+    def _args(self):
+        return dict(
+            key="k",
+            benefit_id="psid-1",
+            prompt="p",
+            model="gemini-3-flash",
+            thinking_level="low",
+            result="やさしい説明",
+        )
+
+    def test_戻り値のエラーがログに出る(self, bq, capsys):
+        """**insert_rows_json は例外を投げず、失敗をリストで返す。**"""
+        bq.insert_errors = [{"index": 0, "errors": [{"reason": "invalid"}]}]
+        explanation_cache.store(**self._args())
+        assert "保存に失敗" in capsys.readouterr().out
+
+    def test_例外もログに出る(self, bq, capsys):
+        bq.raise_on_insert = RuntimeError("権限がない")
+        explanation_cache.store(**self._args())
+        out = capsys.readouterr().out
+        assert "保存できなかった" in out and "権限がない" in out
+
+    def test_失敗しても解説は返る(self, bq):
+        """**キャッシュの失敗で 500 にしない。** 保存できなくても生成日時は返す。"""
+        bq.raise_on_insert = RuntimeError("落ちた")
+        assert explanation_cache.store(**self._args())
+
+    def test_成功したときは何も言わない(self, bq, capsys):
+        explanation_cache.store(**self._args())
+        assert capsys.readouterr().out == ""

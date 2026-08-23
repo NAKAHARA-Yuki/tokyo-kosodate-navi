@@ -39,6 +39,10 @@ class FakeBigQueryClient:
         self.inserted: list[tuple[str, list[dict]]] = []
         self.created_tables: list[object] = []
         self.insert_should_fail = False
+        # insert_rows_json は例外を投げず、失敗をリストで返す経路もある（issue #164）。
+        # 2通りの落ち方を別々に再現できるようにしておく。
+        self.insert_errors: list[dict] = []
+        self.raise_on_insert: Exception | None = None
 
     def query(self, query, job_config=None):
         self.queries.append(query)
@@ -48,8 +52,12 @@ class FakeBigQueryClient:
         return FakeQueryJob(self.rows_to_return)
 
     def insert_rows_json(self, table, rows):
+        if self.raise_on_insert is not None:
+            raise self.raise_on_insert
         if self.insert_should_fail:
             raise RuntimeError("insert failed")
+        if self.insert_errors:
+            return self.insert_errors
         self.inserted.append((table, rows))
         return []
 
