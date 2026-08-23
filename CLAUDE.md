@@ -104,6 +104,9 @@ GitHub の操作は `gh` を使う（`~/.git-credentials` のトークンを実�
 
 詳細は `docs/data-model.md`。特に間違えやすい点だけここに書く。
 
+- **障害の有無で上限が変わる制度がある。** 「原則18年度末まで。ただし障害のある児童は
+  20歳未満」という二段構えの書き方で、`disability_max_age_months` に後段を持っている。
+  **`has_disability=true` のときだけ**そちらを使う（issue #157）。広い側にしか入らない。
 - **年齢で絞るときは必ず `effective_min_age_months` / `effective_max_age_months` を使う。**
   素の `min_age_months` / `max_age_months` は6割超が NULL で、それだけで絞ると
   「10歳なのに新生児向け制度が出る」状態になる（実際に一度やらかしている）。

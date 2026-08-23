@@ -2,7 +2,7 @@
 
 import pandas as pd
 
-from age_rules import extract_age_range, is_prenatal
+from age_rules import extract_age_range, extract_disability_max_age, is_prenatal
 from benefit_refs import extract_required_benefit_names, title_refers_to
 from etl_documents import (
     DOCS_CANDIDATES,
@@ -108,6 +108,24 @@ def build_benefit_row(rec: dict, benefit_id: str) -> dict:
     effective_min = min_age_months if min_age_months is not None else inferred_min
     effective_max = max_age_months if max_age_months is not None else inferred_max
 
+    # **障害のある子にだけ適用される上限**（issue #157）。
+    # 「原則18年度末まで。ただし障害のある児童は20歳未満」という二段構えの制度があり、
+    # 前段だけを読むと 18〜19歳で障害のあるお子さんを持つひとり親に制度が出ない。
+    # 障害の有無で上限が変わるので effective_max_age_months 1本では表せない。
+    disability_max = None
+    for candidate in (
+        target.get("targetPersons") if isinstance(target, dict) else None,
+        target.get("conditions") if isinstance(target, dict) else None,
+        description_plain,
+    ):
+        found = extract_disability_max_age(candidate)
+        if found is not None:
+            disability_max = found
+            break
+    # 広い側にしか意味が無い。狭める向きに使うと「対象なのに出ない」を作る。
+    if disability_max is not None and effective_max is not None and disability_max <= effective_max:
+        disability_max = None
+
     # 妊娠期の制度は「子どもの年齢」では表せないため独立したフラグで持つ
     prenatal = bool(
         is_prenatal(title)
@@ -165,6 +183,7 @@ def build_benefit_row(rec: dict, benefit_id: str) -> dict:
         # 実際の絞り込みに使う値。explicit を優先し、無ければ推定値を使う
         "effective_min_age_months": effective_min,
         "effective_max_age_months": effective_max,
+        "disability_max_age_months": disability_max,
         "age_source": age_source,
         "age_inference_rule": age_rule,
         "is_prenatal": prenatal,

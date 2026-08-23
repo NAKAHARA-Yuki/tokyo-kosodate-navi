@@ -192,6 +192,22 @@ MUTATIONS = [
         "tests": ["tests"],
     },
     {
+        "id": "disability-limit-ignored",
+        "why": "障害があると答えた人に広い上限を使うこと（#157）。無視すると18〜19歳で対象から外れる",
+        "file": "app/queries.py",
+        "old": '        return "IFNULL(disability_max_age_months, effective_max_age_months)"',
+        "new": '        return "effective_max_age_months"',
+        "tests": ["tests"],
+    },
+    {
+        "id": "disability-limit-always-on",
+        "why": "障害と答えていない人にまで広げないこと（#157）。対象外の人に出る",
+        "file": "app/queries.py",
+        "old": "    if has_disability:",
+        "new": "    if True:",
+        "tests": ["tests"],
+    },
+    {
         "id": "cache-failure-is-silent",
         "why": "キャッシュの保存失敗を黙って捨てないこと（#164）。壊れても画面は動くので気づけない",
         "file": "app/explanation_cache.py",

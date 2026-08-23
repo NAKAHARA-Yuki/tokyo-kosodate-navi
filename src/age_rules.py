@@ -284,3 +284,38 @@ def extract_age_range(text):
             hi = None if any(h is None for h in highs) else max(highs)
             return min(lows), hi, "union_of_clauses"
     return _extract_single(text)
+
+
+# 「原則18年度末まで。ただし障害のある児童は20歳未満」という二段構えの制度がある。
+# 前段だけを読むと、**18〜19歳で障害のあるお子さんを持つひとり親に制度が出ない**
+# （児童扶養手当・ひとり親家庭等医療費助成など。実データで43件。issue #157）。
+#
+#   18歳に到達した年度末までの児童（政令で定める程度以上の障がいの状態にある
+#   20歳未満の児童を含む）を養育している方に支給されます
+#
+# 障害の有無で上限が変わるので、`effective_max_age_months` 1本では表せない。
+# 別の列に持ち、**障害があると答えた人にだけ**広い方を使う。
+DISABILITY_AGE_RE = re.compile(
+    r"(?:障害|障がい|障碍)[^。]{0,60}?" + N + r"\s*歳\s*(未満|まで|に達する|に満たない)"
+    r"|" + N + r"\s*歳\s*(未満|まで|に達する|に満たない)[^。]{0,30}?(?:障害|障がい|障碍)"
+)
+
+
+def extract_disability_max_age(text):
+    """障害のある子だけに適用される年齢の上限（月, 閉区間）。無ければ None。
+
+    **同じ文の中にある**ものだけを拾う。離れた場所の「20歳」を拾うと、
+    関係のない記述で上限が伸びる。
+    """
+    t = _norm(text)
+    if not t:
+        return None
+    m = DISABILITY_AGE_RE.search(t)
+    if not m:
+        return None
+    years = _num(m.group(1) or m.group(3))
+    boundary = m.group(2) or m.group(4)
+    if years is None:
+        return None
+    # 「20歳未満」= 19歳11か月まで。「20歳まで」= 20歳11か月まで。
+    return years * 12 - 1 if boundary in ("未満", "に達する", "に満たない") else years * 12 + 11
