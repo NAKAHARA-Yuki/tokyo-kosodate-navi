@@ -47,6 +47,48 @@ LIST_MARKER_RE = re.compile(
     r"^[\s]*(?:[・\-\*●○◆■]|[（(]?\s*[0-9０-９]{1,2}\s*[）)\.]|注釈\s*[0-9０-９]+\s*[）)])\s*"
 )
 
+# 元データは必要書類欄に **Markdown の表**と `<br>` を埋め込んでいる（issue #120）。
+# 行単位でしか切っていなかったため、表の1行が丸ごと1つの「書類」になっていた。
+#
+#   |健康保険証|住民票の写し|国民年金手帳|社員証|   ← 4つの書類が1ノードに潰れている
+#   |:----|:----|                                  ← 区切り行が「書類」になっている
+#
+# dev 実測: `|` を含む書類ノードが 579件、区切り行だけのものが 5件で 80制度に繋がっていた。
+BR_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
+TABLE_SEPARATOR_RE = re.compile(r"^[|｜\s:：]*-{2,}[|｜\s:：\-]*$")
+
+# 「必要書類」「持ち物」のような**欄の見出し**。書類名ではない。
+# 見出しなので中身が無く、どの制度にも同じ文字列で現れるため、
+# そのままノードにすると「同じ書類が要る制度」が大量に生える（dev で 70制度が「必要書類」で繋がっていた）。
+#
+# **後方一致にしない。** 「本人確認書類」「世帯調書」のような正当な書類名を巻き込む。
+HEADING_RE = re.compile(
+    r"^(?:[（(]?[0-9０-９]{1,2}[）)]?[\s.、]*)?"
+    r"(?:申請|申込み?|届出|手続き?|接種当日|来所|来庁|受診)?"
+    r"(?:時|当日)?(?:に|の)?"
+    r"(?:必要(?:な)?(?:もの|書類|物)|持ち物|持参するもの|お持ちいただくもの"
+    r"|用意するもの|ご用意いただくもの|持参物)$"
+)
+
+
+# 表を割ってよいかの判断に使う「書類名らしい末尾」。
+# 必要書類欄には日程表・料金表も埋まっているので、書類名が1つも無い表は割らない。
+DOC_SUFFIX_RE = re.compile(r"(?:証|書|票|手帳|カード|印鑑|通帳|一式|写し)(?:[（(][^）)]*[）)])?$")
+
+# 表をセルに割ると、書類ではないセル（見出し・値・注記）も出てくる（issue #120）。
+JAPANESE_RE = re.compile(r"[ぁ-んァ-ヶ一-龥]")
+# 括弧の対応を見るときに全角と半角を揃える（元データは片方だけ全角のことが多い）。
+PAREN_TABLE = str.maketrans("（）", "()")
+PARENTHESIZED_RE = re.compile(r"^[（(【\[][^）)】\]]*[）)】\]]$")
+VALUE_CELL_RE = re.compile(r"^[0-9０-９]+\s*(?:人|円|件|枚|部|通|歳|か月|年|回|割)?$")
+
+
+def is_heading_line(text: str) -> bool:
+    """必要書類欄の**見出し行**か（「必要書類」「申請に必要なもの」など）。"""
+    if not text:
+        return False
+    return bool(HEADING_RE.match(text.strip().strip("【】「」『』［］[]：:")))
+
 
 def strip_decorations(name: str) -> str:
     """書類名から表記の揺れを生む飾りを外す（ファイルサイズ・リンクの補助文言）。
@@ -95,6 +137,29 @@ def looks_like_document(name: str) -> bool:
     # 接続表現で始まるものは前の文の続き。書類名が「ただし」で始まることはない
     if raw.startswith(("ただし", "また", "なお", "その他", "および", "及び", "かつ")):
         return False
+    # 欄の見出し（「必要書類」「申請に必要なもの」）は書類ではない（issue #120）
+    if is_heading_line(text):
+        return False
+    # **括弧が閉じていないものは分割の副産物。** 表やリンクの途中で切れている。
+    #   A：個人番号カード（写真のあるマイナンバーカード
+    #
+    # **全角と半角を揃えてから数える。** 元データは片方だけ全角で書くことが多く、
+    # 種類ごとに数えると閉じているものまで「閉じていない」と判定する（PR #166 のレビュー）。
+    # 実データで 18件が該当した。
+    #
+    #   所得関係書類(父・母）        ← 半角で開いて全角で閉じている。正当な書類名
+    #   身元確認書類(マイナンバーカード、運転免許証等）
+    normalized = text.translate(PAREN_TABLE)
+    if normalized.count("(") != normalized.count(")"):
+        return False
+    # 表をセルに割った副産物（issue #120）。**書類ではなく表の見出しや値**が混ざる。
+    #   03(3831)2181 / 0人 / 1 / (注1) / (外勤者)
+    if not JAPANESE_RE.search(text):
+        return False  # 電話番号・数字・記号だけ
+    if PARENTHESIZED_RE.match(text):
+        return False  # 全体が括弧＝注記や区分のラベル
+    if VALUE_CELL_RE.match(text):
+        return False  # 「0人」「3枚」のような値のセル
     if any(hint in text for hint in NON_DOCUMENT_HINTS):
         return False
     # 読点を複数含むものは文章の可能性が高い
@@ -133,16 +198,41 @@ def split_belongings(text: str):
     読点「、」では分割しない。「上記以外にも資格審査上、別途書類等をご用意いただく場合があります。」
     のような一文が途中でぶつ切りにされ、意味不明な断片が書類として並んでしまうため。
     行単位で切り、行頭の箇条書きマーカーだけを取り除く。
+
+    **`<br>` と Markdown の表は行として扱う**（issue #120）。元データはこの2つを
+    必要書類欄に埋め込んでおり、改行だけで切ると表の1行が丸ごと1つの書類になる。
+    表の行はセルに割って、中に入っている書類名を取り出す。区切り行は落とす。
     """
     if not text:
         return []
     items = []
-    for raw_line in text.split("\n"):
+    for raw_line in BR_RE.sub("\n", text).split("\n"):
         line = raw_line.replace("　", " ").strip()
         if not line:
             continue
-        line = LIST_MARKER_RE.sub("", line)
-        line = _clean_text(line)
-        if line:
-            items.append(line)
+        for cell in _table_cells(line):
+            cell = LIST_MARKER_RE.sub("", cell)
+            cell = _clean_text(cell)
+            if cell:
+                items.append(cell)
     return items
+
+
+def _table_cells(line: str):
+    """Markdown の表なら**セルに割って**返す。表でなければそのまま1件返す。
+
+    区切り行（`|:----|:----|`）は書類ではないので何も返さない。
+
+    **書類名が入っている表だけを割る。** 必要書類欄には日程表や料金表も
+    埋まっており（`|12時30分～13時45分|` `|1,920,000円 未満|`）、区別せずに割ると
+    それらが書類として並ぶ。割らなければ `|` を含んだままなので、
+    従来どおり `NON_DOCUMENT_RE` が書類ではないと判定する。
+    """
+    if "|" not in line:
+        return [line]
+    if TABLE_SEPARATOR_RE.match(line):
+        return []
+    cells = [cell.strip() for cell in line.split("|") if cell.strip()]
+    if not any(DOC_SUFFIX_RE.search(cell) for cell in cells):
+        return [line]
+    return cells

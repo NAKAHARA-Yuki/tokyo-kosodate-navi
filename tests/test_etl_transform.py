@@ -650,3 +650,126 @@ class TestIncomeConditionsInRow:
         row = self._row(conditions="住民税非課税世帯の方が対象です")
         assert row["requires_non_taxable"] is True
         assert "非課税" in row["income_evidence"]
+
+
+class TestMarkdownTablesInDocuments:
+    """必要書類欄に埋まっている Markdown の表と `<br>`（issue #120）。
+
+    元データは表と改行タグを本文に直接埋めている。行単位でしか切っていなかったため、
+    **表の1行が丸ごと1つの「書類」**になっていた。
+    dev 実測で `|` を含む書類ノードが 579件、区切り行だけのものが 5件あった。
+    """
+
+    def test_書類の表はセルに割る(self):
+        items = split_belongings("|健康保険証|住民票の写し|国民年金手帳|社員証|")
+        assert items == ["健康保険証", "住民票の写し", "国民年金手帳", "社員証"]
+
+    def test_区切り行は落とす(self):
+        assert split_belongings("|:----|:----|") == []
+        assert split_belongings("|---|---|---|") == []
+
+    def test_brタグで切る(self):
+        assert split_belongings("母子健康手帳<br>健康保険証<br>印鑑") == [
+            "母子健康手帳",
+            "健康保険証",
+            "印鑑",
+        ]
+
+    def test_書類名が無い表は割らない(self):
+        """**日程表や料金表まで割ると、時刻や金額が書類として並ぶ。**
+
+        割らなければ `|` が残るので、従来どおり書類ではないと判定される。
+        """
+        line = "|12時30分～13時45分|1,920,000円 未満|"
+        assert split_belongings(line) == [line]
+        assert looks_like_document(line) is False
+
+
+class TestHeadingLinesAreNotDocuments:
+    """欄の**見出し**を書類にしない（issue #120）。
+
+    「必要書類」「申請に必要なもの」はどの制度にも同じ文字列で現れるため、
+    ノードにすると「同じ書類が要る制度」が大量に生える
+    （dev 実測: 「申請に必要なもの」で 70制度、「必要書類」で 57本のエッジ）。
+    """
+
+    @pytest.mark.parametrize(
+        "heading",
+        [
+            "必要書類",
+            "申請に必要なもの",
+            "持ち物",
+            "申請に必要な書類",
+            "手続きに必要なもの",
+            "接種当日の持ち物",
+        ],
+    )
+    def test_見出しは書類ではない(self, heading):
+        assert looks_like_document(heading) is False
+
+    @pytest.mark.parametrize("name", ["本人確認書類", "世帯調書", "母子健康手帳", "就労証明書"])
+    def test_正当な書類名を巻き込まない(self, name):
+        assert looks_like_document(name) is True
+
+
+class TestSplitArtifacts:
+    """分割の副産物を書類にしない（issue #120）。"""
+
+    def test_括弧が閉じていないものは落とす(self):
+        assert looks_like_document("A：個人番号カード（写真のあるマイナンバーカード") is False
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "所得関係書類(父・母）",
+            "受給者、対象児童の戸籍謄本(請求日の1か月以内に発行されたもの）",
+            "身元確認書類(マイナンバーカード、運転免許証等）",
+        ],
+    )
+    def test_全角と半角が混ざっていても閉じていれば残す(self, name):
+        """**元データは片方だけ全角で書くことが多い**（PR #166 のレビュー）。
+
+        種類ごとに数えると、閉じているものまで「閉じていない」と判定して落とす。
+        実データで 18件が巻き添えになっていた。
+        """
+        assert looks_like_document(name) is True
+
+    @pytest.mark.parametrize("cell", ["03(3831)2181", "0人", "1", "（注1）", "(外勤者)"])
+    def test_表の値や注記は書類ではない(self, cell):
+        assert looks_like_document(cell) is False
+
+
+class TestSharedDocIgnoresNonDocuments:
+    """**書類でないものでエッジを張らない**（issue #120）。
+
+    dev 実測で SHARED_DOC 4,901本のうち 2,656本が、見出し行や表の区切り行で
+    張られていた。「同じ書類が要る」という根拠が無く、
+    「ついで申請できる」という提示の意味が失われる。
+    """
+
+    def _records(self, doc_text: str):
+        return [
+            {
+                "basicInformation": {"psid": f"psid-{i}", "canonicalName": f"制度{i}"},
+                "area": {"areaCode": "131024;中央区"},
+                "必要書類": doc_text,
+            }
+            for i in range(2)
+        ]
+
+    def _shared_docs(self, doc_text: str):
+        result = transform(self._records(doc_text))
+        edges = result["benefit_leads_to"]
+        if len(edges) == 0:
+            return []
+        return [e for e in edges.to_dict("records") if e["relation"] == "SHARED_DOC"]
+
+    def test_見出しではエッジを張らない(self):
+        assert self._shared_docs("必要書類") == []
+
+    def test_区切り行ではエッジを張らない(self):
+        assert self._shared_docs("|:----|:----|") == []
+
+    def test_本物の書類ならエッジを張る(self):
+        """**塞ぎすぎていないこと。** ここが空になると、この検査群は無意味になる。"""
+        assert len(self._shared_docs("母子健康手帳")) >= 1

@@ -38,6 +38,9 @@ make cov            # 一度も実行されていない経路を探す
 | PROPERTY GRAPH の `DROP PRIMARY KEY` を落とす | `TestCreateGraphSql::test_every_add_is_preceded_by_a_drop` |
 | `benefits` スキーマの年齢列を STRING にする | `TestSchemaMatchesTransform::test_age_columns_are_integers` |
 | キャッシュの保存失敗を黙って捨てる | `TestFailuresAreVisible::test_戻り値のエラーがログに出る` |
+| 見出し行（「必要書類」）を書類として扱う | `TestHeadingLinesAreNotDocuments` ほか |
+| 書類が並ぶ表をセルに割らない | `TestMarkdownTablesInDocuments::test_書類の表はセルに割る` |
+| 書類でないノードで SHARED_DOC を張る | `TestSharedDocIgnoresNonDocuments::test_見出しではエッジを張らない` |
 
 ### 検証で見つかった穴（このPRで塞いだ）
 
