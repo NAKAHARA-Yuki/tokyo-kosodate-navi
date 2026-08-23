@@ -30,6 +30,8 @@ class FakeClient:
         self.datasets = set(existing_datasets)
         self.queries: list[str] = []
         self.created_datasets: list[str] = []
+        # 退避が権限不足で落ちる状況を再現する（実際に起きた）
+        self.raise_on_query: Exception | None = None
 
     def get_table(self, table_id):
         name = table_id.split(".")[-1]
@@ -49,9 +51,12 @@ class FakeClient:
 
     def query(self, sql):
         self.queries.append(sql)
+        raise_on_query = self.raise_on_query
 
         class _Job:
             def result(self_inner):
+                if raise_on_query is not None:
+                    raise raise_on_query
                 return None
 
         return _Job()
@@ -142,3 +147,35 @@ class TestSnapshotHappensBeforeLoad:
             etl_to_bq.main()
 
         assert order == ["quality", "snapshot", "load"], order
+
+
+class TestSnapshotFailureDoesNotStopEtl:
+    """**退避に失敗しても ETL は止めない**（実際に本番相当で落ちた）。
+
+    守るための仕組みが、守る対象を止めてしまっては本末転倒。
+    ETL 用の SA には `bigquery.tables.deleteSnapshot` が無く、
+    有効期限付きのスナップショット作成が 403 になって ETL 全体が落ちた。
+
+    ただし**黙って続けない**。退避が無いまま上書きされるので、
+    戻せない状態に入ったことは必ず出す。
+    """
+
+    def test_失敗しても例外を投げない(self, capsys):
+        client = FakeClient(existing={"benefits"})
+        client.raise_on_query = RuntimeError("403 deleteSnapshot denied")
+        assert snapshot_tables(client, "proj", ["benefits"], now=FIXED_NOW) == []
+
+    def test_失敗したことを必ず出す(self, capsys):
+        client = FakeClient(existing={"benefits"})
+        client.raise_on_query = RuntimeError("403 deleteSnapshot denied")
+        snapshot_tables(client, "proj", ["benefits"], now=FIXED_NOW)
+        out = capsys.readouterr().out
+        assert "失敗" in out and "戻せない" in out
+        assert "deleteSnapshot" in out
+
+    def test_初回実行と取り違えない(self, capsys):
+        """**「退避するものが無い」と「退避できなかった」は別。**"""
+        client = FakeClient(existing={"benefits"})
+        client.raise_on_query = RuntimeError("403")
+        snapshot_tables(client, "proj", ["benefits"], now=FIXED_NOW)
+        assert "初回実行" not in capsys.readouterr().out
