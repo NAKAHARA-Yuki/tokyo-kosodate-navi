@@ -37,6 +37,7 @@ make cov            # 一度も実行されていない経路を探す
 | ロードを追記（`WRITE_APPEND`）にする | `TestLoadTables::test_every_load_is_write_truncate` |
 | PROPERTY GRAPH の `DROP PRIMARY KEY` を落とす | `TestCreateGraphSql::test_every_add_is_preceded_by_a_drop` |
 | `benefits` スキーマの年齢列を STRING にする | `TestSchemaMatchesTransform::test_age_columns_are_integers` |
+| キャッシュの保存失敗を黙って捨てる | `TestFailuresAreVisible::test_戻り値のエラーがログに出る` |
 
 ### 検証で見つかった穴（このPRで塞いだ）
 
