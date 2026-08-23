@@ -444,8 +444,22 @@ def transform(records):
                     "doc_url": doc_links[0]["uri"] if doc_links else None,
                 },
             )
+            # **最初に見た書き方だけで決めない**（issue #120）。同じ書類でも自治体ごとに
+            # 書き方が違い、「個人番号カード、運転免許証、パスポートなど」のように
+            # 書類名に見えない列挙が先に来ると、マイナンバーカードのノード全体が
+            # 「書類ではない」と判定されていた（dev で 407本のエッジが該当）。
+            # 1つでも書類名らしい書き方があれば書類とみなす。
+            if looks_like_document(doc_plain):
+                documents[doc_id]["is_probable_document"] = True
+
             benefit_requires_doc.append({"benefit_id": benefit_id, "doc_id": doc_id})
-            benefit_docs.setdefault(benefit_id, set()).add(doc_id)
+            # **書類らしくないものはエッジに使わない**（issue #120）。
+            # 「必要書類」「申請に必要なもの」のような欄の見出しや、表の区切り行でも
+            # SHARED_DOC が張られていた（dev 実測: 見出し「申請に必要なもの」で 70制度、
+            # 区切り行 `|:----|:----|` で 47本）。「同じ書類が要る」という根拠が無い。
+            # 行そのものは documents に残す（データは捨てない）。
+            if documents[doc_id]["is_probable_document"]:
+                benefit_docs.setdefault(benefit_id, set()).add(doc_id)
 
     # --- schemes: 同名制度を1つの制度マスタに束ねる（自治体別レコードはその実装） ---
     schemes = {}
