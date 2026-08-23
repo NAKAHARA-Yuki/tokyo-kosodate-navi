@@ -55,7 +55,14 @@ export default async function RootLayout({
   const dataSource = await getDataSource();
 
   return (
-    <html lang="ja" className={`${notoSansJP.variable} h-full antialiased`} suppressHydrationWarning>
+    <html
+      lang="ja"
+      // **既定を JSX 側にも書く。** Strict Mode の再マウントで React は
+      // <html> の属性を JSX が持つものに戻すので、ここが無いと属性ごと消える。
+      data-theme="light"
+      className={`${notoSansJP.variable} h-full antialiased`}
+      suppressHydrationWarning
+    >
       <head>
         {/* **React が動く前に配色を決める**（issue #101）。マウント後に当てると
             一瞬ライトが見えてから暗くなる。html の属性を直接書き換えるので、
