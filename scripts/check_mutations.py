@@ -192,6 +192,14 @@ MUTATIONS = [
         "tests": ["tests"],
     },
     {
+        "id": "cache-failure-is-silent",
+        "why": "キャッシュの保存失敗を黙って捨てないこと（#164）。壊れても画面は動くので気づけない",
+        "file": "app/explanation_cache.py",
+        "old": '        errors = client.insert_rows_json(table_id(), [row])\n        if errors:\n            _warn(f"保存に失敗した行がある: {errors}")',
+        "new": "        client.insert_rows_json(table_id(), [row])",
+        "tests": ["tests"],
+    },
+    {
         "id": "stub-ignores-search-params",
         "why": "E2E のスタブが検索条件を無視して常に成功を返さないこと（#110）",
         "file": "e2e/fake_data.py",
