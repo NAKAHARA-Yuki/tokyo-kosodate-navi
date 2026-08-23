@@ -5,6 +5,25 @@ backend（`app/`, FastAPI）とは別の Cloud Run サービスとして動く N
 サーバサイド（Route Handler / Server Component）から ID トークン付きで行う必要があり、
 ブラウザから backend を直接叩くことはできない。
 
+## Node のバージョン
+
+**実行時の Node と `@types/node` のメジャーを揃える**（issue #93）。
+
+| | 版 |
+|---|---|
+| `frontend/Dockerfile` | `node:24-slim` |
+| `.github/workflows/ci.yml` | `node-version: "24"` |
+| `docker/Dockerfile`（開発コンテナ） | NodeSource `node_24.x` |
+| `package.json` の `@types/node` | **`^24`** |
+
+`@types/node` は「どの Node で動かすか」の宣言なので、実行環境より**新しい**メジャーを
+指していると、**その版で入った API を型が許してしまう**（実行時に落ちるまで気づけない）。
+逆に古いと、使える API が型で弾かれる。
+
+Dependabot は `@types/node` の新メジャーを個別 PR で提案してくる。
+**上げるのは実行時の Node を上げるときだけ**で、そのときは上の4つを同時に動かす。
+単独で上げた PR は閉じてよい。
+
 ## ローカル開発
 
 backend への認証を通すため、`gcloud run services proxy` で backend をローカルにプロキシする。
