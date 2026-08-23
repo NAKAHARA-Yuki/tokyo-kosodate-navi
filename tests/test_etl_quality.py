@@ -11,11 +11,13 @@ import pandas as pd
 import pytest
 
 from etl_quality import (
+    MAX_CONTRADICTIONS_SHOWN,
     MAX_ROW_DECREASE_RATIO,
     QualityCheckError,
     age_contradictions,
     check_tables,
     run_quality_checks,
+    write_step_summary,
 )
 
 
@@ -222,3 +224,58 @@ class TestAgeContradictions:
         tables["benefits"]["min_age_months"] = 36
         tables["benefits"]["max_age_months"] = 71
         assert check_tables(tables) == []
+
+
+class TestStepSummary:
+    """検出結果が**実行画面に出る**ことを守る（issue #159）。
+
+    #141 の検出はログにしか出ておらず、grep した人しか気づけなかった。
+    件数が増えたときこそ見たいのに、増えても静かなままだった。
+    """
+
+    def test_writes_nothing_without_github_env(self, monkeypatch, tmp_path):
+        """手元やテストでは何もしない。環境変数が無いときに落ちないこと。"""
+        monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+        assert write_step_summary(healthy_tables(), None, []) is False
+
+    def test_zero_contradictions_is_stated_explicitly(self, monkeypatch, tmp_path):
+        """**0件のときも「0件」と書く。**
+
+        「検出されなかった」と「そもそも検査していない」は、
+        黙っていると区別できない。
+        """
+        path = tmp_path / "summary.md"
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(path))
+        assert write_step_summary(healthy_tables(), None, []) is True
+        assert "0件" in path.read_text(encoding="utf-8")
+
+    def test_lists_contradictions_and_caps_them(self, monkeypatch, tmp_path):
+        path = tmp_path / "summary.md"
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(path))
+        n = MAX_CONTRADICTIONS_SHOWN + 5
+        many = [f"三鷹市 「健診{i}」 制度名=4〜6か月 / 年齢欄=36〜71か月" for i in range(n)]
+        write_step_summary(healthy_tables(), None, many)
+        text = path.read_text(encoding="utf-8")
+        assert f"{n}件" in text
+        assert "三鷹市 「健診0」" in text
+        # 全部は貼らない。上限を超えた分は件数だけ示す
+        assert f"健診{MAX_CONTRADICTIONS_SHOWN}" not in text
+        assert "他 5 件" in text
+
+    def test_shows_row_count_delta(self, monkeypatch, tmp_path):
+        """件数は「何と比べていくつか」が分かる形で出す。"""
+        path = tmp_path / "summary.md"
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(path))
+        tables = healthy_tables()
+        previous = {name: len(df) - 5 for name, df in tables.items()}
+        write_step_summary(tables, previous, [])
+        text = path.read_text(encoding="utf-8")
+        assert "+5" in text
+
+    def test_appends_instead_of_overwriting(self, monkeypatch, tmp_path):
+        """GITHUB_STEP_SUMMARY は他のステップも書く。上書きしないこと。"""
+        path = tmp_path / "summary.md"
+        path.write_text("先に書かれていたもの\n", encoding="utf-8")
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(path))
+        write_step_summary(healthy_tables(), None, [])
+        assert "先に書かれていたもの" in path.read_text(encoding="utf-8")
