@@ -718,6 +718,22 @@ class TestSplitArtifacts:
     def test_括弧が閉じていないものは落とす(self):
         assert looks_like_document("A：個人番号カード（写真のあるマイナンバーカード") is False
 
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "所得関係書類(父・母）",
+            "受給者、対象児童の戸籍謄本(請求日の1か月以内に発行されたもの）",
+            "身元確認書類(マイナンバーカード、運転免許証等）",
+        ],
+    )
+    def test_全角と半角が混ざっていても閉じていれば残す(self, name):
+        """**元データは片方だけ全角で書くことが多い**（PR #166 のレビュー）。
+
+        種類ごとに数えると、閉じているものまで「閉じていない」と判定して落とす。
+        実データで 18件が巻き添えになっていた。
+        """
+        assert looks_like_document(name) is True
+
     @pytest.mark.parametrize("cell", ["03(3831)2181", "0人", "1", "（注1）", "(外勤者)"])
     def test_表の値や注記は書類ではない(self, cell):
         assert looks_like_document(cell) is False

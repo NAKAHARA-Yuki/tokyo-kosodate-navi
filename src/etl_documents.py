@@ -77,6 +77,8 @@ DOC_SUFFIX_RE = re.compile(r"(?:証|書|票|手帳|カード|印鑑|通帳|一�
 
 # 表をセルに割ると、書類ではないセル（見出し・値・注記）も出てくる（issue #120）。
 JAPANESE_RE = re.compile(r"[ぁ-んァ-ヶ一-龥]")
+# 括弧の対応を見るときに全角と半角を揃える（元データは片方だけ全角のことが多い）。
+PAREN_TABLE = str.maketrans("（）", "()")
 PARENTHESIZED_RE = re.compile(r"^[（(【\[][^）)】\]]*[）)】\]]$")
 VALUE_CELL_RE = re.compile(r"^[0-9０-９]+\s*(?:人|円|件|枚|部|通|歳|か月|年|回|割)?$")
 
@@ -140,7 +142,15 @@ def looks_like_document(name: str) -> bool:
         return False
     # **括弧が閉じていないものは分割の副産物。** 表やリンクの途中で切れている。
     #   A：個人番号カード（写真のあるマイナンバーカード
-    if text.count("（") != text.count("）") or text.count("(") != text.count(")"):
+    #
+    # **全角と半角を揃えてから数える。** 元データは片方だけ全角で書くことが多く、
+    # 種類ごとに数えると閉じているものまで「閉じていない」と判定する（PR #166 のレビュー）。
+    # 実データで 18件が該当した。
+    #
+    #   所得関係書類(父・母）        ← 半角で開いて全角で閉じている。正当な書類名
+    #   身元確認書類(マイナンバーカード、運転免許証等）
+    normalized = text.translate(PAREN_TABLE)
+    if normalized.count("(") != normalized.count(")"):
         return False
     # 表をセルに割った副産物（issue #120）。**書類ではなく表の見出しや値**が混ざる。
     #   03(3831)2181 / 0人 / 1 / (注1) / (外勤者)
