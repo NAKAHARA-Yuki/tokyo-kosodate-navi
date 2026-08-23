@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useLayoutEffect, useSyncExternalStore } from "react";
 
 import {
   THEME_LABELS,
@@ -51,6 +51,22 @@ function getServerSnapshot(): ThemePreference {
  */
 export function ThemeToggle() {
   const preference = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+
+  // **開発時の再マウントで消えた属性を当て直す。**
+  // Strict Mode は一度コンポーネントを作り直し、そのとき <html> の属性を
+  // JSX が管理するものだけに戻す。先読みスクリプトが付けた data-theme が消え、
+  // 保存した選択を無視した配色で表示される
+  // （node_modules/next/dist/docs/01-app/02-guides/preventing-flash-before-hydration.md）。
+  //
+  // 本番では先読みスクリプトが付けた値と同じになるので、何も起きない。
+  // useEffect ではなく useLayoutEffect にするのは、描画の前に当てるため。
+  useLayoutEffect(() => {
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    document.documentElement.dataset.theme = resolveTheme(
+      readStoredPreference(window.localStorage),
+      prefersDark,
+    );
+  }, []);
 
   function apply(next: ThemePreference) {
     try {
