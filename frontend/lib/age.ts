@@ -3,9 +3,10 @@
  *
  * `age_source` は「その年齢範囲をどれだけ信用してよいか」を表す。
  *
- * - `explicit` : 元データに年齢が明示されている
- * - `inferred` : 本文から `src/age_rules.py` の正規表現で推定した
- * - `unknown`  : どちらでもない（範囲は NULL）
+ * - `explicit`  : 元データに年齢が明示されている
+ * - `inferred`  : 本文から `src/age_rules.py` の正規表現で推定した
+ * - `corrected` : **元データの年齢欄が制度名と食い違っていた**ので制度名を採った（issue #114）
+ * - `unknown`   : どちらでもない（範囲は NULL）
  *
  * **推定値を断定的に見せてはいけない**（CLAUDE.md）。
  * 実データでは inferred が 2,346件（30.0%）、unknown が 2,672件（34.2%）で、
@@ -64,6 +65,16 @@ export function ageLabel(
       text: `対象 ${range}（推定）`,
       uncertain: true,
       note: "元データに年齢の記載が無いため、制度の本文から推定した範囲です。正確な条件は本文と窓口でご確認ください。",
+    };
+  }
+
+  if (source === "corrected") {
+    // **断定しない。** 元データの年齢欄を採らなかった判断はこちらのもので、
+    // 自治体が定めた条件ではない（issue #114）。
+    return {
+      text: `対象 ${range}（推定）`,
+      uncertain: true,
+      note: "元データの年齢の記載が制度名と食い違っていたため、制度名から読み取った範囲です。正確な条件は本文と窓口でご確認ください。",
     };
   }
   return { text: `対象 ${range}`, uncertain: false, note: "元データに記載されている年齢の条件です。" };

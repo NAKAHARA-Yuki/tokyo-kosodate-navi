@@ -40,6 +40,15 @@ SUMMARY_CANDIDATES = ["概要", "summary", "description", "outline"]
 INSTITUTION_TYPE_LABELS = {1: "地方公共団体", 2: "その他"}
 
 
+def _ranges_overlap(lo1, hi1, lo2, hi2) -> bool:
+    """2つの年齢範囲が重なるか。None は「制限なし」として扱う。"""
+    lo1 = lo1 if lo1 is not None else -(10**9)
+    hi1 = hi1 if hi1 is not None else 10**9
+    lo2 = lo2 if lo2 is not None else -(10**9)
+    hi2 = hi2 if hi2 is not None else 10**9
+    return lo1 <= hi2 and lo2 <= hi1
+
+
 def build_benefit_row(rec: dict, benefit_id: str) -> dict:
     """1レコードを benefits テーブルの1行（全フィールド取り込み済み）に変換する。"""
     basic = rec.get("basicInformation") or {}
@@ -108,6 +117,23 @@ def build_benefit_row(rec: dict, benefit_id: str) -> dict:
     effective_min = min_age_months if min_age_months is not None else inferred_min
     effective_max = max_age_months if max_age_months is not None else inferred_max
 
+    # **元データの年齢欄が制度名と食い違うことがある**（issue #114）。
+    # 三鷹市「3～4カ月児健康診査」の年齢欄は 36〜71（＝3〜5歳）で、
+    # 月数をそのまま歳の欄に入れている。ADR 0002 は explicit を最優先すると
+    # 決めているが、その前提（元データの年齢欄は正しい）が成り立っていない。
+    #
+    # そのまま使うと **0歳の子に4か月児健診が出ず、3〜5歳の子に出る**。
+    # 探している人からは「無い」ようにしか見えないので気づけない。
+    #
+    # **制度名から読めた範囲と重ならないときだけ**、制度名を採る。
+    # 重なっていれば元データを尊重する（少しのずれで上書きしない）。
+    if age_source == "explicit":
+        from_title = extract_age_range(title)
+        if from_title and not _ranges_overlap(from_title[0], from_title[1], effective_min, effective_max):
+            effective_min, effective_max = from_title[0], from_title[1]
+            age_rule = from_title[2]
+            age_source = "corrected"
+
     # **障害のある子にだけ適用される上限**（issue #157）。
     # 「原則18年度末まで。ただし障害のある児童は20歳未満」という二段構えの制度があり、
     # 前段だけを読むと 18〜19歳で障害のあるお子さんを持つひとり親に制度が出ない。
@@ -130,6 +156,7 @@ def build_benefit_row(rec: dict, benefit_id: str) -> dict:
     # 正直に申告した人にだけ制度が見えなくなる、といういちばん避けたい壊れ方になる。
     if disability_max is not None and (effective_max is None or disability_max <= effective_max):
         disability_max = None
+
 
     # 妊娠期の制度は「子どもの年齢」では表せないため独立したフラグで持つ
     prenatal = bool(

@@ -43,7 +43,7 @@ PROPERTY GRAPH: `kosodate_graph`
 | `inferred_min_age_months` / `inferred_max_age_months` | INT64 | テキストから推定した年齢 |
 | `effective_min_age_months` / `effective_max_age_months` | INT64 | **絞り込みに使うのはこれ**。明示値を優先し、無ければ推定値 |
 | `disability_max_age_months` | INT64 | **障害のある子にだけ適用される上限**（issue #157）。無い制度は NULL。`has_disability=true` のときだけ `effective_max_age_months` の代わりに使う |
-| `age_source` | STRING | `explicit` / `inferred` / `unknown` |
+| `age_source` | STRING | `explicit` / `inferred` / **`corrected`** / `unknown`。`corrected` は元データの年齢欄が制度名と食い違ったため制度名を採ったもの（issue #114）。確度は `inferred` と同じ扱い |
 | `age_inference_rule` | STRING | どのルールで推定したか |
 | `is_prenatal` | BOOL | 妊娠期の制度（1,279件）。子の月齢では表せないため別軸 |
 

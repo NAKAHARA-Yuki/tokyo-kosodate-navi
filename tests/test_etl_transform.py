@@ -802,3 +802,50 @@ class TestDisabilityLimitDoesNotCreateNewCeiling:
         )
         assert r["effective_max_age_months"] == 227
         assert r["disability_max_age_months"] == 239
+
+class TestContradictingAgeColumnIsCorrected:
+    """**元データの年齢欄が制度名と食い違うとき、制度名を採る**（issue #114）。
+
+    ADR 0002 は explicit を最優先すると決めているが、その前提
+    （元データの年齢欄は正しい）が実データでは成り立たない。
+    三鷹市「3～4カ月児健康診査」の年齢欄は 36〜71（＝3〜5歳）で、
+    **0歳の子に出ず、3〜5歳の子に出る**。
+    """
+
+    def row(self, title: str, lo, hi):
+        return build_benefit_row(
+            {
+                "institutionName": {"canonicalName": title},
+                "target": {
+                    "greaterThanOrEqualTo": {"targetAgeOfMonths": lo},
+                    "lessThanOrEqualTo": {"targetAgeOfMonths": hi},
+                },
+            },
+            "psid-1",
+        )
+
+    def test_月と歳の取り違えを補正する(self):
+        r = self.row("3～4カ月児健康診査", 36, 71)
+        assert (r["effective_min_age_months"], r["effective_max_age_months"]) == (3, 4)
+        assert r["age_source"] == "corrected"
+
+    def test_元の欄は残す(self):
+        """**上書きしない。** 元データに何が書かれていたかは追えるようにする。"""
+        r = self.row("3～4カ月児健康診査", 36, 71)
+        assert (r["min_age_months"], r["max_age_months"]) == (36, 71)
+
+    def test_重なっていれば元データを尊重する(self):
+        """**少しのずれで上書きしない。** 元データのほうが正確なこともある。"""
+        r = self.row("1歳6か月児健康診査", 18, 23)
+        assert r["age_source"] == "explicit"
+        assert (r["effective_min_age_months"], r["effective_max_age_months"]) == (18, 23)
+
+    def test_制度名から読めなければ何もしない(self):
+        r = self.row("子育て支援センターのご案内", 36, 71)
+        assert r["age_source"] == "explicit"
+        assert (r["effective_min_age_months"], r["effective_max_age_months"]) == (36, 71)
+
+    def test_年齢欄が無いものは従来どおり推定(self):
+        r = build_benefit_row({"institutionName": {"canonicalName": "3歳児健康診査"}}, "psid-1")
+        assert r["age_source"] == "inferred"
+
