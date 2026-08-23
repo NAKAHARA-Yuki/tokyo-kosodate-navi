@@ -65,7 +65,7 @@ MUTATIONS = [
         "file": "app/queries.py",
         "old": (
             '        "WHERE (effective_min_age_months IS NULL OR effective_min_age_months <= a) "\n'
-            '        "AND (effective_max_age_months IS NULL OR effective_max_age_months >= a))"'
+            '        f"AND ({upper} IS NULL OR {upper} >= a))"'
         ),
         "new": (
             '        "WHERE (min_age_months IS NULL OR min_age_months <= a) "\n'
@@ -79,7 +79,7 @@ MUTATIONS = [
         "file": "app/queries.py",
         "old": (
             '        f"(effective_min_age_months IS NULL OR effective_min_age_months <= @{param_name}) "\n'
-            '        f"AND (effective_max_age_months IS NULL OR effective_max_age_months >= @{param_name})"'
+            '        f"AND ({upper} IS NULL OR {upper} >= @{param_name})"'
         ),
         "new": (
             '        f"(min_age_months IS NULL OR min_age_months <= @{param_name}) "\n'
@@ -221,7 +221,9 @@ MUTATIONS = [
         "file": "app/queries.py",
         "old": "    if has_disability:",
         "new": "    if True:",
-
+        "tests": ["tests"],
+    },
+    {
         "id": "contradicting-age-not-corrected",
         "why": "元データの年齢欄が制度名と食い違うとき制度名を採ること（#114）。0歳の子に4か月児健診が出なくなる",
         "file": "src/etl_graph.py",
@@ -235,7 +237,6 @@ MUTATIONS = [
         "file": "src/etl_graph.py",
         "old": "        if from_title and not _ranges_overlap(from_title[0], from_title[1], effective_min, effective_max):",
         "new": "        if from_title:",
-
         "tests": ["tests"],
     },
     {

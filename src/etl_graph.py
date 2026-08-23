@@ -2,7 +2,12 @@
 
 import pandas as pd
 
-from age_rules import extract_age_range, extract_disability_max_age, is_prenatal
+from age_rules import (
+    extract_age_range,
+    extract_disability_max_age,
+    has_multiple_age_stages,
+    is_prenatal,
+)
 from benefit_refs import extract_required_benefit_names, title_refers_to
 from etl_documents import (
     DOCS_CANDIDATES,
@@ -127,7 +132,13 @@ def build_benefit_row(rec: dict, benefit_id: str) -> dict:
     #
     # **制度名から読めた範囲と重ならないときだけ**、制度名を採る。
     # 重なっていれば元データを尊重する（少しのずれで上書きしない）。
-    if age_source == "explicit":
+    #
+    # **複数の段階が並んだ制度名では補正しない**（PR #170 のレビュー）。
+    # 「3から4か月児・1歳6か月児・3歳児健康診査」は同じ制度名で複数行あり、
+    # 行ごとに違う段階の年齢が入っている。制度名からは「この行がどの段階か」を
+    # 決められないので、最初に出てきた年齢を全行に当てると**正しい元データを壊す**。
+    # 実データで小金井市・檜原村の3行がこれに当たっていた。
+    if age_source == "explicit" and not has_multiple_age_stages(title):
         from_title = extract_age_range(title)
         if from_title and not _ranges_overlap(from_title[0], from_title[1], effective_min, effective_max):
             effective_min, effective_max = from_title[0], from_title[1]
@@ -156,7 +167,6 @@ def build_benefit_row(rec: dict, benefit_id: str) -> dict:
     # 正直に申告した人にだけ制度が見えなくなる、といういちばん避けたい壊れ方になる。
     if disability_max is not None and (effective_max is None or disability_max <= effective_max):
         disability_max = None
-
 
     # 妊娠期の制度は「子どもの年齢」では表せないため独立したフラグで持つ
     prenatal = bool(

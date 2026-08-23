@@ -6,6 +6,7 @@
 
 import pytest
 
+from age_rules import has_multiple_age_stages
 from etl_documents import (
     canonical_document_name,
     looks_like_document,
@@ -803,6 +804,7 @@ class TestDisabilityLimitDoesNotCreateNewCeiling:
         assert r["effective_max_age_months"] == 227
         assert r["disability_max_age_months"] == 239
 
+
 class TestContradictingAgeColumnIsCorrected:
     """**元データの年齢欄が制度名と食い違うとき、制度名を採る**（issue #114）。
 
@@ -849,3 +851,53 @@ class TestContradictingAgeColumnIsCorrected:
         r = build_benefit_row({"institutionName": {"canonicalName": "3歳児健康診査"}}, "psid-1")
         assert r["age_source"] == "inferred"
 
+
+class TestCompositeTitlesAreNotCorrected:
+    """**複数の段階が並んだ制度名では補正しない**（PR #170 のレビュー）。
+
+    「3から4か月児・1歳6か月児・3歳児健康診査」は同じ制度名で複数行あり、
+    行ごとに違う段階の年齢が入っている。制度名からは「この行がどの段階か」を
+    決められないので、最初に出てきた年齢を全行に当てると
+    **正しい元データを壊す**。何もしないより悪い結果になる。
+    """
+
+    def row(self, title: str, lo, hi):
+        return build_benefit_row(
+            {
+                "institutionName": {"canonicalName": title},
+                "target": {
+                    "greaterThanOrEqualTo": {"targetAgeOfMonths": lo},
+                    "lessThanOrEqualTo": {"targetAgeOfMonths": hi},
+                },
+            },
+            "psid-1",
+        )
+
+    @pytest.mark.parametrize(
+        ("title", "lo", "hi"),
+        [
+            # 小金井市。同じ制度名で2行あり、それぞれ別の段階の正しい値を持っている
+            ("「3から4か月児・1歳6か月児・3歳児健康診査」", 18, 18),
+            ("「3から4か月児・1歳6か月児・3歳児健康診査」", 36, 36),
+            # 檜原村
+            ("1 歳 6 ヶ月児・3 歳児健康診査", 36, 48),
+        ],
+    )
+    def test_複合タイトルは元データを尊重する(self, title, lo, hi):
+        r = self.row(title, lo, hi)
+        assert r["age_source"] == "explicit"
+        assert (r["effective_min_age_months"], r["effective_max_age_months"]) == (lo, hi)
+
+    def test_単一の段階なら従来どおり補正する(self):
+        """**塞ぎすぎていないこと。** ここが止まると #114 が直らない。"""
+        r = self.row("3～4カ月児健康診査", 36, 71)
+        assert r["age_source"] == "corrected"
+        assert (r["effective_min_age_months"], r["effective_max_age_months"]) == (3, 4)
+
+    def test_歳と月で1つの年齢を表すものは複合ではない(self):
+        assert has_multiple_age_stages("1歳6か月児健康診査") is False
+        assert has_multiple_age_stages("1 歳 6 ヶ月児・3 歳児健康診査") is True
+
+    def test_単位を共有した列挙も複合とみなす(self):
+        """「2・3・4か月」は数え方によっては1件にしか見えない。"""
+        assert has_multiple_age_stages("2・3・4か月の赤ちゃんとママの会") is True

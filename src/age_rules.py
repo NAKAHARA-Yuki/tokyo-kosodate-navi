@@ -327,3 +327,33 @@ def extract_disability_max_age(text):
         return None
     # 「20歳未満」= 19歳11か月まで。「20歳まで」= 20歳11か月まで。
     return years * 12 - 1 if boundary in ("未満", "に達する", "に満たない") else years * 12 + 11
+
+
+# **複数の健診段階が1つの制度名に並んでいることがある**（PR #170 のレビュー）。
+#
+#   3から4か月児・1歳6か月児・3歳児健康診査   ← 3つの段階が1件に入っている
+#   2・3・4か月の赤ちゃんとママの会             ← 単位を共有した列挙
+#
+# こういう制度は**同じ制度名で複数行あり、行ごとに違う段階の年齢が入っている**。
+# 制度名からは「この行がどの段階か」を決められないので、
+# 最初に出てきた年齢を全行に当てると、正しい元データを壊す。
+AGE_MENTION_RE = re.compile(r"[0-9０-９]+\s*(?:歳|か月)")
+# 「2・3・4か月」のように単位を1つしか書かない列挙。上の数え方では1件にしか見えない。
+SHARED_UNIT_ENUM_RE = re.compile(r"[0-9０-９]+\s*(?:[・･、,／/]\s*[0-9０-９]+\s*)+(?:歳|か月)")
+
+
+def has_multiple_age_stages(text) -> bool:
+    """制度名に年齢の段階が2つ以上並んでいるか。
+
+    「1歳6か月児」は**1つの段階**（歳と月で1つの年齢を表す）なので数えない。
+    """
+    t = _norm(text)
+    if not t:
+        return False
+    if SHARED_UNIT_ENUM_RE.search(t):
+        return True
+    mentions = len(AGE_MENTION_RE.findall(t))
+    result = extract_age_range(t)
+    # child_age_ym（「1歳6か月児」）は2つの言及で1段階を表す
+    consumed = 2 if result and result[2] == "child_age_ym" else 1
+    return mentions > consumed
