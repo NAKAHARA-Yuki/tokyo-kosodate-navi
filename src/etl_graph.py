@@ -97,6 +97,26 @@ def build_benefit_row(rec: dict, benefit_id: str) -> dict:
     # --- 年齢・地域・タグコード ---
     min_age_months, max_age_months = compute_age_bounds(target) if isinstance(target, dict) else (None, None)
 
+    # **上下が逆に入っている行がある**（issue #173）。dev 実測で9件。
+    #
+    #   利島村「放課後児童クラブ」   144〜72   ← 12歳〜6歳。小学生向けなので 72〜143 が正しい
+    #   荒川区「私立幼稚園等の施設案内」 83〜36   ← 私立幼稚園なので 36〜83
+    #
+    # 絞り込みは min <= 子の月齢 <= max なので、**どの年齢にもマッチしない**。
+    # 制度としては存在するのに、属性から探している人には決して出てこない。
+    #
+    # 入れ替えるだけにする。**どちらか片方が誤記**という可能性は残るが、
+    # 9件すべて入れ替えると意味が通る（放課後児童クラブ＝小学生、幼稚園＝3〜6歳）。
+    # 触ったことは age_source='corrected' で追える。
+    # **元の欄は書き換えない**（#114 と同じ方針）。元データに何が入っていたかは追えるようにし、
+    # 判定に使う値（effective_*）だけを入れ替える。
+    age_columns_swapped = (
+        min_age_months is not None and max_age_months is not None and min_age_months > max_age_months
+    )
+    usable_min, usable_max = (
+        (max_age_months, min_age_months) if age_columns_swapped else (min_age_months, max_age_months)
+    )
+
     # 明示的な年齢が無い場合はテキストから推定する。推定値は別カラムに保持し、
     # effective_* で「使う値」を提供しつつ age_source で確度を判別できるようにする。
     inferred_min = inferred_max = None
@@ -119,8 +139,8 @@ def build_benefit_row(rec: dict, benefit_id: str) -> dict:
     else:
         age_source = "unknown"
 
-    effective_min = min_age_months if min_age_months is not None else inferred_min
-    effective_max = max_age_months if max_age_months is not None else inferred_max
+    effective_min = usable_min if usable_min is not None else inferred_min
+    effective_max = usable_max if usable_max is not None else inferred_max
 
     # **元データの年齢欄が制度名と食い違うことがある**（issue #114）。
     # 三鷹市「3～4カ月児健康診査」の年齢欄は 36〜71（＝3〜5歳）で、
@@ -138,6 +158,9 @@ def build_benefit_row(rec: dict, benefit_id: str) -> dict:
     # 行ごとに違う段階の年齢が入っている。制度名からは「この行がどの段階か」を
     # 決められないので、最初に出てきた年齢を全行に当てると**正しい元データを壊す**。
     # 実データで小金井市・檜原村の3行がこれに当たっていた。
+    if age_columns_swapped:
+        age_source = "corrected"
+
     if age_source == "explicit" and not has_multiple_age_stages(title):
         from_title = extract_age_range(title)
         if from_title and not _ranges_overlap(from_title[0], from_title[1], effective_min, effective_max):

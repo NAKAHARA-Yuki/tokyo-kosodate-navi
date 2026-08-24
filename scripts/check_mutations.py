@@ -224,6 +224,14 @@ MUTATIONS = [
         "tests": ["tests"],
     },
     {
+        "id": "inverted-age-not-swapped",
+        "why": "年齢欄の上下が逆の行を入れ替えること（#173）。どの年齢にもマッチしない制度が残る",
+        "file": "src/etl_graph.py",
+        "old": "    usable_min, usable_max = (\n        (max_age_months, min_age_months) if age_columns_swapped else (min_age_months, max_age_months)\n    )",
+        "new": "    usable_min, usable_max = min_age_months, max_age_months",
+        "tests": ["tests"],
+    },
+    {
         "id": "contradicting-age-not-corrected",
         "why": "元データの年齢欄が制度名と食い違うとき制度名を採ること（#114）。0歳の子に4か月児健診が出なくなる",
         "file": "src/etl_graph.py",
