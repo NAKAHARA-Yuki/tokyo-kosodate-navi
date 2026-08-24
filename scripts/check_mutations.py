@@ -224,6 +224,14 @@ MUTATIONS = [
         "tests": ["tests"],
     },
     {
+        "id": "grade-range-loses-upper-grade",
+        "why": "「小学校1年生から6年生」の上の学年を落とさないこと（#117）。6年生に制度が出なくなる",
+        "file": "src/age_rules.py",
+        "old": '        school = m.group(1) or "小学"  # 学校名が無いときは小学校（6年まで並ぶのは小学校だけ）',
+        "new": "        school = None  # 変異: 学校を決めない",
+        "tests": ["tests"],
+    },
+    {
         "id": "inverted-age-not-swapped",
         "why": "年齢欄の上下が逆の行を入れ替えること（#173）。どの年齢にもマッチしない制度が残る",
         "file": "src/etl_graph.py",

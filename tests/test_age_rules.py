@@ -501,3 +501,39 @@ class TestDisabilityMaxAge:
         書類の注記や相談の案内まで拾うと、まったく別の年齢が上限になる。
         """
         assert extract_disability_max_age(text) is None
+
+
+class TestMissedPatterns:
+    """実データで拾えていなかった書き方（issue #117 の調査）。"""
+
+    def test_以降も以後と同じに読む(self):
+        """**1文字の表記ゆれ**で町田市の児童育成手当を落としていた。"""
+        assert extract_age_range("18歳に達する日以降の最初の3月31日までの間にある児童") == (
+            0,
+            227,
+            "stage_until18fy",
+        )
+        # 元からある「以後」も引き続き通る
+        assert extract_age_range("18歳に達する日以後の最初の3月31日") == (0, 227, "stage_until18fy")
+
+    def test_学校名の無い学年の範囲(self):
+        """学童保育の対象者欄はこの書き方が多い（八王子市の実データ）。"""
+        assert extract_age_range("八王子市内に居住又は在学する1年生から6年生までの児童") == (
+            72,
+            143,
+            "range_grades_only",
+        )
+
+    def test_学校名が前にだけ付く形(self):
+        """**後ろ側に学校名が付かない。** 以前は「小学1年」だけ拾って 72〜83 になっていた。"""
+        assert extract_age_range("小学校1年生から6年生") == (72, 143, "range_grades_only")
+
+    def test_中学は3年まで(self):
+        assert extract_age_range("中学1年生から3年生") == (144, 179, "range_grades_only")
+
+    def test_学年の上限を超える数字は学年ではない(self):
+        assert extract_age_range("1年生から9年生") is None
+
+    def test_学校をまたぐ範囲は従来どおり(self):
+        """**塞ぎすぎていないこと。** 既存の range_grades が優先されること。"""
+        assert extract_age_range("小学校6年生から高校1年生")[2] == "range_grades"

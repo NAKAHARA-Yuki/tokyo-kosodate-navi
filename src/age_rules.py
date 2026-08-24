@@ -73,6 +73,30 @@ def _extract_single(text):
 
     # ---- 2. 学年レンジ（「小学校6年生から高校1年生」など）----
     grade_pat = r"(小学|中学|高校|高等学校)(?:校|生)?\s*" + N + r"\s*年"
+    # **学校名を伴わない「1年生から6年生まで」**（issue #117）。
+    # 学童保育の対象者欄はこの書き方が多い。1〜6 は小学校とみなす
+    # （中学は3年までなので、6 まで並ぶのは小学校しかない）。
+    #
+    # **後ろ側に学校名が付かない書き方に対応する。** 実データでは
+    # 「小学校1年生から6年生」「1年生から6年生まで」の両方が出てくる。
+    # 学校名が1回しか出ないと、下の grade_pat では1件しか拾えず
+    # 「小学1年（72〜83）」になって、6年生までが落ちていた。
+    m = re.search(
+        r"(?:(小学|中学|高校|高等学校)(?:校|生)?\s*)?"
+        + N
+        + r"\s*年生?\s*(?:から|〜|～|-|―)\s*"
+        + N
+        + r"\s*年生",
+        t,
+    )
+    if m:
+        school = m.group(1) or "小学"  # 学校名が無いときは小学校（6年まで並ぶのは小学校だけ）
+        a, b = _num(m.group(2)), _num(m.group(3))
+        base = GRADE_BASE.get(school)
+        # 学年の上限（小6 / 中3 / 高3）を超える数字は学年ではない
+        limit = 6 if school == "小学" else 3
+        if a is not None and b is not None and base is not None and 1 <= a <= b <= limit:
+            return base + (a - 1) * 12, base + (b - 1) * 12 + 11, "range_grades_only"
     grades = [(mm.group(1), _num(mm.group(2))) for mm in re.finditer(grade_pat, t)]
     if len(grades) >= 2:
         lo = _grade_months(*grades[0])
@@ -129,7 +153,9 @@ def _extract_single(text):
         return 144, 215, "stage_juniorhigh_highschool"
 
     # ---- 4. 児童手当・児童扶養手当の定型文 ----
-    if re.search(r"18\s*歳(?:に達する日|の誕生日)?以後の最初の3月31日", t):
+    # **「以後」と「以降」の両方を見る。** 実データは同じ意味で両方使っている。
+    # 1文字の違いで町田市の児童育成手当を取りこぼしていた（issue #117）。
+    if re.search(r"18\s*歳(?:に達する日|の誕生日)?以[後降]の最初の3月31日", t):
         return 0, 227, "stage_until18fy"
     # 同じことを「年度末」と書く自治体がある。**児童扶養手当・児童育成手当・
     # ひとり親家庭等医療費助成がこちらの表記で、対象年齢を一つも持てていなかった**
