@@ -4,7 +4,7 @@
 # 上限が無いと、破壊的変更が入った版が誰かの環境にだけ入り、
 # 「同じコードなのに手元だけ落ちる」状態になる（pandas 2→3 で実際に踏んだ）。
 # 上限を上げるのは意図的な変更としてPRで行う。追従は Dependabot に任せる。
-google-cloud-bigquery>=3.43.0,<4
+google-cloud-bigquery>=3.44.0,<4
 pandas>=3.0.5,<4
 requests>=2.34.2,<3
 pyarrow>=25.0.1,<26
